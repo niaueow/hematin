@@ -47,7 +47,10 @@ export const errorHandler: ErrorRequestHandler = (err: unknown, req, res, next) 
     logger.error('unhandled_error', {
       method: req.method,
       path: pathOf(req.originalUrl),
-      error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+      error:
+        err instanceof Error
+          ? { name: err.name, message: err.message, stack: err.stack }
+          : String((err as { message?: unknown } | null)?.message ?? err), // e.g. Neon's ErrorEvent
     });
   }
 

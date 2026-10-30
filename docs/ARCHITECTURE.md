@@ -86,15 +86,17 @@ On callback: load the intent **where userId = caller**, check that it's PENDING 
   "regions": ["sin1"],
   "crons": [
     { "path": "/api/cron/daily-reminder", "schedule": "0 14 * * *" },
-    { "path": "/api/cron/weekly-recap",   "schedule": "0 15 * * 0" }
+    { "path": "/api/cron/weekly-recap",   "schedule": "0 15 * * 0" },
+    { "path": "/api/cron/income-reminder", "schedule": "0 3 1 * *" }
   ]
 }
 ```
-- Times are UTC: 14:00 UTC = 21:00 WIB; Sunday 15:00 UTC = Sunday 22:00 WIB. On Hobby they fire **somewhere within that hour**, and failures are **not retried**.
+- Times are UTC: 14:00 UTC = 21:00 WIB; Sunday 15:00 UTC = Sunday 22:00 WIB; 03:00 UTC on the 1st = 10:00 WIB on the 1st. On Hobby they fire **somewhere within that hour**, and failures are **not retried**.
 - Each handler checks `Authorization: Bearer ${CRON_SECRET}`.
 - Idempotent per run: `INSERT CronRun(runKey="daily-reminder:2026-10-30")`. On conflict, skip.
 - Daily reminder: for each ACTIVE user with no transaction (any type, not deleted) where `localDate = today` and no `NoSpendDay` for today → send the reminder. If there's no income this month, add the income nudge.
 - Weekly recap: for each ACTIVE user, summarize the Mon–Sun week ending today.
+- Monthly income reminder (`server/jobs/monthlyIncomeReminder.ts`, implemented): for each ACTIVE, not `botBlocked` user with no INCOME dated in the current WIB month → send `INCOME_REMINDER`. Run key `income-reminder:YYYY-MM`.
 - Send with a small concurrency limit and catch per-user errors (one blocked user must not stop the loop). If a user has blocked the bot (403), mark them `botBlocked=true`.
 
 ### 3.4 Dashboard auth

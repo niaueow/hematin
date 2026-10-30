@@ -32,7 +32,12 @@ The shares are stored per user (`needsPct`, `wantsPct`, `savingsPct`, must sum t
   savingsTarget = income - needsMonth - wantsMonth   // remainder goes to savings
   ```
 - If income is recorded later in the month, the month's allocation is recomputed for **all** segments of that month, including past ones. This is fine because everything is computed on read.
-- If `income(M) == 0`, the month has **no budget** (state `NO_BUDGET`). The bot asks the user to record income (PRD F12). In this state, "mau X" checks return `NO_BUDGET`, not DENY.
+- If `income(M) == 0`, the month has **no budget** (state `NO_BUDGET`). The bot asks the user to record income (PRD F12), and a monthly reminder goes out on the 1st (BOT_SPEC §4). In this state, "mau X" checks return `NO_BUDGET`, not DENY.
+- **A month without recorded income means income is unknown, not zero** (D-024). A `NO_BUDGET` month is transparent to the rollover chains:
+  - Its spending is still recorded and shown (`spent`, history, charts), but it creates **no wants debt and no needs deficit**, and it earns **no savings bonus**.
+  - Wants debt and needs carry-in coming from an earlier month **wait** and apply to the **next month that has income**. They aren't forgiven and aren't shown in the `NO_BUDGET` month.
+  - Remaining/pace figures are 0 while `NO_BUDGET` (the bot shows the "record income" prompt instead).
+  - Logging is never blocked. If that month's income is recorded later, the month is recomputed and joins the chains like any other.
 
 ## 3. Week segments
 
@@ -60,7 +65,7 @@ base(last) = X - sum(base of the other segments)   // remainder goes to the last
 
 ## 4. WANTS: weekly envelope with asymmetric rollover
 
-Segments are processed **in chronological order across months**, starting from the user's first segment that has a budget.
+Segments are processed **in chronological order across months**, starting from the user's first segment that has a budget. Only months with income take part; a `NO_BUDGET` month passes the debt through unchanged (§2).
 
 ```
 effective(s) = base(s) - debt(prev)
@@ -73,13 +78,16 @@ surplus(s)   = max(0, effective(s) - spent(s))      // goes to the savings bonus
 - `surplus(s)` becomes a **savings bonus** only when the segment has **ended** (segment end date < today). A segment in progress has no surplus yet.
 - A surplus **never** carries to the next wants segment.
 - `debt(prev)` for the very first segment = 0.
+- `debt(prev)` for the first segment of a month with income is the debt left by the last month **with income** (a `NO_BUDGET` month in between holds it).
 
 Current segment values:
 ```
 remainingWeek = effective(current) - spent(current)     // can be negative
 remainingDays = days from today to end of current segment, inclusive (≥ 1)
 dailyPace     = remainingWeek > 0 ? floor(remainingWeek / remainingDays) : 0
-remainingMonthWants = sum(effective of this month's segments) - sum(spent this month)  // informational
+remainingMonthWants = remainingWeek + sum(base of this month's segments after the current one)  // informational
+// Not "Σ effective − Σ spent": that subtracts rolled debt twice (once in spent, again in the next
+// segment's effective). See D-024. NO_BUDGET → 0.
 ```
 
 ## 5. NEEDS: monthly pool with weekly guidance
@@ -94,7 +102,8 @@ remainingMonth   = needsMonth - carryIn - needsSpentMTD
 ```
 
 - **Month-end surplus** (`remainingMonth > 0` when the month has ended) → savings bonus for that month.
-- **Month-end deficit** → `carryIn` for next month: `carryIn(M+1) = max(0, -remainingMonth(M))`. This reduces next month's needs. *(Default for PRD open question Q1.)*
+- **Month-end deficit** → `carryIn` for next month: `carryIn(M+1) = max(0, -remainingMonth(M))`. This reduces next month's needs. *(Default for PRD open question Q1.)* "Next month" is the next month **with income**; a `NO_BUDGET` month holds the carry-in and adds none of its own (§2).
+- `carryIn` reduces `remainingMonth` only. `remainingWeek` stays `cumAllowance − needsSpentMTD` (confirmed by the owner, §10 I3).
 - Overspending needs never blocks logging. The bot only shows a warning line.
 
 ## 6. Purchase check ("mau X") verdicts
@@ -151,6 +160,7 @@ Income on 1 Nov 2026 = **Rp2.000.000** → needs 1.000.000, wants 600.000, savin
 - remainingWeek = 110.000 − 50.000 = 60.000; remainingDays = Wed→Sun = 5; dailyPace = 12.000
 - 35.000 ≤ 60.000 but > 12.000 → **CAUTION**
 - after buying: 25.000 left for 4 more days → Rp6.250/day → shown as Rp6.250
+- remainingMonthWants = 60.000 + (S4 140.000 + S5 140.000 + S6 20.000) = **360.000**. S2's 30.000 overspend is subtracted once, through S3's effective. The old formula gave 335.000.
 
 ## 9. Required tests (Vitest, table-driven)
 
@@ -164,15 +174,15 @@ Income on 1 Nov 2026 = **Rp2.000.000** → needs 1.000.000, wants 600.000, savin
 8. Editing or deleting a past transaction changes downstream debt and bonus.
 9. WIB date boundaries: a transaction at 23:30 WIB on the 31st (16:30 UTC) belongs to the 31st, and one at 00:30 WIB on the 1st (17:30 UTC on the previous day) belongs to the 1st.
 
-## 10. Interpretations made in M2 (pending owner confirmation)
+## 10. Owner decisions on open cases (2026-10-31, D-024)
 
-The rules above leave these cases open. The engine does the following, and each one has a test in `tests/budget/engine.test.ts`. Confirm or change them. A change means editing this file, the engine, and the tests.
+These were open after M2 and are now decided. Each is covered in `tests/budget/engine.test.ts`.
 
-| # | Case | What the engine does | Alternative |
-|---|---|---|---|
-| I1 | A month **without income** after the chain has started (e.g. income in Oct, none in Nov) | It stays in the chain with all bases = 0. Wants spending becomes debt that rolls on, and all needs spending becomes carry-in for the next month | Skip such months (no debt or carry-in from them), or reset the chain |
-| I2 | Transactions dated **after today** (possible from the dashboard) | Ignored until their date arrives | Count them immediately |
-| I3 | Needs `remainingWeek` when there's a `carryIn` | Exactly §5: `cumAllowance − needsSpentMTD`, so the carry-in only reduces `remainingMonth`. Example: carry-in 100.000 → week shows 299.999, month 700.000 | `cumAllowance − carryIn − needsSpentMTD` |
-| I4 | `remainingMonthWants` (§4, informational) | Exactly §4: `Σ effective − Σ spent`. ⚠ This counts rolled debt twice (once in `spent`, again in later segments' reduced `effective`). The §8 example gives **335.000**, but under the rules only 360.000 can still be spent (60.000 this week + 140.000 + 140.000 + 20.000) | `remainingWeek + Σ base of the later segments this month` (= 360.000 in §8) |
-| I5 | Weekly recap "Jajan: spent / allocation" | Allocation = Σ `effective` of the week's segments (after debt). Σ `base` is also returned | Show the base |
-| I6 | Recap "sisa jajan jadi bonus" on Sunday night | `leftover` = Σ `surplus` of the week's segments, including the one ending today, because it's a projection: it becomes a real bonus at midnight | — |
+| # | Case | Decision |
+|---|---|---|
+| I1 | A month **without income** | `NO_BUDGET` = income unknown, not zero. The month is transparent to the chains: no new wants debt, needs deficit, or bonus from it, and earlier debt/carry-in waits for the next month with income (§2). A reminder goes out on the 1st of every month, ~10:00 WIB, to users with no income recorded for that month yet (BOT_SPEC §4) |
+| I2 | Transactions dated **after today** | Ignored until their date arrives |
+| I3 | Needs `carryIn` | Reduces the month's needs (`remainingMonth`) as in §5. `remainingWeek` = `cumAllowance − needsSpentMTD` |
+| I4 | `remainingMonthWants` | Fixed in §4: `remainingWeek + Σ base of later segments` (360.000 in §8, not 335.000) |
+| I5 | Weekly recap "Jajan: spent / allocation" | Show `allocationAfterDebt` = Σ base − debt carried into the week's first segment. `baseAllocation` and `debtDeducted` are returned separately. Debt between two segments of the same week isn't deducted again (it's already in `spent`). Invariant: `allocationAfterDebt − spent = leftover − debtOut` |
+| I6 | Recap on Sunday night | The recap covers Mon–Sun. `leftover` (Σ surplus) includes the segment ending today, as a projection: it becomes a real bonus at midnight |

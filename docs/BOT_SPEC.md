@@ -139,6 +139,15 @@ Ada jajan atau ongkos yang kelewat? Ketik aja, misal "gojek 15k".
 ```
 If there's no income this month, add: `Btw uang jajan bulan ini belum dicatat. Ketik "uang jajan 2jt" ya.`
 
+### Monthly income reminder (1st of the month, ~10:00 WIB)
+Sent to ACTIVE users the bot can reach (not `botBlocked`) who have **no income dated this month** yet. Once per month (`CronRun` `income-reminder:YYYY-MM`). Phrased conditionally ("kalau ada…"), because a month without recorded income may simply have none. It's only a message: logging and everything else keep working. Variants live in `copy.ts` (`INCOME_REMINDER`), e.g.:
+```
+Pagi! 🌞 Udah tanggal 1, bulan baru nih.
+Kalau bulan ini ada uang jajan atau pemasukan lain, catat ya biar aku bisa ngitung budget-mu.
+Ketik aja, misal "uang jajan 2jt".
+```
+While a month has no income it's `NO_BUDGET` (BUDGET_RULES §2): no verdicts, no debt, no carry-in from that month.
+
 ### Weekly recap (Sun ~22:00 WIB)
 ```
 📊 Rekap minggu ini (26 Okt – 1 Nov)
@@ -150,6 +159,7 @@ Top: Makan Rp120.000 · Jajan Rp70.000 · Transport Rp60.000
 Tabungan bulan ini: 65% dari target. Dikit lagi!
 ```
 For weeks that cross months, show the totals for the whole Mon–Sun week. Allocations are the sum of the segments.
+- "Jajan: spent / X" uses `wants.allocationAfterDebt` (base minus debt carried in from last week). When `debtDeducted > 0`, say so next to it so it isn't mistaken for the base, e.g. `Jajan: Rp95.000 / Rp110.000 (udah dipotong utang Rp30.000)`. `baseAllocation` is only for that explanation.
 
 ## 5. Copy guide (`bot/copy.ts`)
 

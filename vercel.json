@@ -5,11 +5,27 @@
   "outputDirectory": "dist",
   "regions": ["sin1"],
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/:path*",
+      "destination": "/api"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ],
   "crons": [
-    { "path": "/api/cron/daily-reminder", "schedule": "0 14 * * *" },
-    { "path": "/api/cron/weekly-recap", "schedule": "0 15 * * 0" }
+    {
+      "path": "/api/cron/daily-reminder",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/weekly-recap",
+      "schedule": "0 15 * * 0"
+    },
+    {
+      "path": "/api/cron/income-reminder",
+      "schedule": "0 3 1 * *"
+    }
   ]
 }

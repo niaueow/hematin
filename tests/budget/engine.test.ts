@@ -131,8 +131,8 @@ describe('§8 worked example, reproduced exactly', () => {
       spent: 50_000,
       remainingWeek: 60_000,
       dailyPace: 12_000,
-      // Σ effective (20 + 140 + 110 + 140 + 140 + 20 thousand) − 235.000 spent this month
-      remainingMonth: 335_000,
+      // §4 (corrected, D-024): remainingWeek + later bases = 60.000 + 140.000 + 140.000 + 20.000
+      remainingMonth: 360_000,
     });
     // S1 ended with 5.000 surplus → bonus; S2 ended in debt (no surplus).
     expect(s.savings).toMatchObject({ recorded: 0, bonus: 5_000, total: 5_000, progressPct: 1, target: 400_000 });
@@ -384,17 +384,83 @@ describe('§7 savings progress', () => {
   });
 });
 
-describe('interpretations (BUDGET_RULES §10, pending owner confirmation)', () => {
-  it('a month without income after the chain started still carries wants debt and needs deficits', () => {
-    const history = [income('2026-10-01', 2_000_000), wants('2026-11-03', 25_000), needs('2026-11-03', 40_000)];
+describe('§4 remainingMonthWants = remainingWeek + base of later segments (no double-counted debt)', () => {
+  const s3 = (spent: number) => [NOV_INCOME, wants('2026-11-09', spent)];
+  it.each([
+    ['§8 example (debt already in effective)', workedExample, '2026-11-11', 360_000],
+    ['no debt, nothing spent this week', s3(0), '2026-11-11', 140_000 + 300_000],
+    ['this week in debt: the debt is subtracted once', s3(150_000), '2026-11-11', -10_000 + 300_000],
+    ['last segment of the month: equals remainingWeek', [NOV_INCOME, wants('2026-11-30', 5_000)], '2026-11-30', 15_000],
+    ['debt larger than all later bases goes negative', s3(500_000), '2026-11-11', -360_000 + 300_000],
+  ])('%s', (_name, history, today, expected) => {
+    expect(snap([...history], today).wants.remainingMonth).toBe(expected);
+  });
+
+  it.each([
+    ['in budget', 50_000],
+    ['in debt (the next segment absorbs it)', 150_000],
+  ])('%s: equals what can still be spent if nothing more is spent', (_name, spent) => {
+    const today = '2026-11-11';
+    const history = s3(spent);
+    const nov = month(ledgerOf(history, today, '2026-11'), '2026-11');
+    const current = nov.segments[2] as (typeof nov.segments)[number];
+    // Later segments' effective already has this week's debt taken off, so only a positive remainder adds.
+    const later = nov.segments.slice(3).reduce((n, seg) => n + seg.wants.effective, 0);
+    const spendable = Math.max(0, current.wants.effective - current.wants.spent) + later;
+    expect(snap(history, today).wants.remainingMonth).toBe(spendable);
+  });
+});
+
+describe('§2 months without income are NO_BUDGET and transparent to the chains (D-024)', () => {
+  const oct = income('2026-10-01', 2_000_000);
+  const octOverspend = wants('2026-10-30', 116_132 + 12_000); // Oct S5 debt 12.000
+  const octNeedsDeficit = needs('2026-10-15', 1_100_000); // Oct needs −100.000
+  const novSpending = [wants('2026-11-03', 25_000), needs('2026-11-03', 40_000)]; // November: no income
+  const dec = income('2026-12-01', 2_000_000);
+
+  it('spending in a month without income creates no wants debt and no needs carry-in', () => {
+    const history = [oct, ...novSpending, dec];
     const ledger = ledgerOf(history, '2026-12-01', '2026-11', '2026-12');
     const nov = month(ledger, '2026-11');
-    expect(nov.chained).toBe(true);
-    // Literal §4 formula: Σ effective (0 + 0 + 4 × −25.000) − 25.000 spent. The debt is counted again in
-    // every later segment's effective, so this "informational" number double-counts (see BUDGET_RULES §10).
-    expect(nov.wants.remainingMonth).toBe(-125_000);
-    expect(month(ledger, '2026-12').needs.carryIn).toBe(40_000);
-    expect(snap(history, '2026-12-01').wants.debtIn).toBe(25_000);
+    expect(nov.hasIncome).toBe(false);
+    expect(nov.segments.every((seg) => seg.wants.debt === 0 && seg.wants.debtIn === 0)).toBe(true);
+    expect(nov.needs).toEqual({ carryIn: 0, spent: 40_000, remainingMonth: 0 });
+    expect(nov.wants.spent).toBe(25_000); // still visible
+    expect(month(ledger, '2026-12').needs.carryIn).toBe(0);
+    expect(snap(history, '2026-12-01').wants.debtIn).toBe(0);
+  });
+
+  it('debt and carry-in from an earlier month with income wait and apply to the next month with income', () => {
+    const history = [oct, octOverspend, octNeedsDeficit, ...novSpending, dec];
+    const ledger = ledgerOf(history, '2026-12-01', '2026-11', '2026-12');
+    expect(month(ledger, '2026-11').segments[0]?.wants.debtIn).toBe(0); // held, not shown in November
+    expect(month(ledger, '2026-12').needs.carryIn).toBe(100_000);
+    expect(snap(history, '2026-12-01').wants.debtIn).toBe(12_000);
+  });
+
+  it('a NO_BUDGET month shows spending but no remaining / pace numbers', () => {
+    const s = snap([oct, octOverspend, ...novSpending], '2026-11-04');
+    expect(s.state).toBe('NO_BUDGET');
+    expect(s.wants).toEqual({
+      base: 0,
+      debtIn: 0,
+      effective: 0,
+      spent: 25_000,
+      remainingWeek: 0,
+      dailyPace: 0,
+      remainingMonth: 0,
+    });
+    expect(s.needs).toMatchObject({ spentMTD: 40_000, remainingWeek: 0, carryIn: 0, remainingMonth: 0 });
+    expect(s.savings).toMatchObject({ target: 0, bonus: 0, progressPct: 0 });
+    expect(checkPurchase(s, 5_000).verdict).toBe('NO_BUDGET');
+  });
+
+  it('recording that month’s income later brings it back into the chain (computed on read)', () => {
+    const history = [oct, octOverspend, ...novSpending, income('2026-11-20', 2_000_000)];
+    const nov = month(ledgerOf(history, '2026-11-21', '2026-11'), '2026-11');
+    expect(nov.hasIncome).toBe(true);
+    expect(nov.segments[0]?.wants.debtIn).toBe(12_000); // Oct debt now lands on 1 Nov
+    expect(nov.segments[1]?.wants).toMatchObject({ debtIn: 0, spent: 25_000, debt: 0 });
   });
 });
 
@@ -421,8 +487,9 @@ describe('weekly recap (BOT_SPEC §4)', () => {
     // Oct needs: S1 129.032, S2–S4 225.806, S5 = 1.000.000 − 806.450 = 193.550; Nov S1 33.333.
     expect(recap.needs).toEqual({ allocation: 193_550 + 33_333, spent: 80_000 });
     expect(recap.wants).toEqual({
-      allocation: 116_132 + 20_000,
-      base: 116_132 + 20_000,
+      allocationAfterDebt: 116_132 + 20_000,
+      baseAllocation: 116_132 + 20_000,
+      debtDeducted: 0,
       spent: 70_000,
       leftover: 66_132 + 0,
       debtOut: 0,
@@ -438,13 +505,49 @@ describe('weekly recap (BOT_SPEC §4)', () => {
 
   it('debt carried out of the week', () => {
     const recap = weeklyRecap({ pcts, transactions: workedExample.slice(0, 4), today: d('2026-11-08') });
-    expect(recap.wants).toMatchObject({ allocation: 140_000, spent: 170_000, leftover: 0, debtOut: 30_000 });
+    expect(recap.wants).toMatchObject({ allocationAfterDebt: 140_000, spent: 170_000, leftover: 0, debtOut: 30_000 });
+  });
+
+  it('debt carried in from last week is shown as deducted from the base (I5)', () => {
+    const history = [...workedExample, wants('2026-11-14', 40_000)];
+    const recap = weeklyRecap({ pcts, transactions: history, today: d('2026-11-15') });
+    expect(recap.wants).toEqual({
+      allocationAfterDebt: 110_000,
+      baseAllocation: 140_000,
+      debtDeducted: 30_000,
+      spent: 90_000,
+      leftover: 20_000,
+      debtOut: 0,
+    });
+  });
+
+  it('debt between the two segments of one week is not deducted twice', () => {
+    // Oct S5 overspent by 12.000 → Nov S1 effective 8.000. The overspend is already in "spent".
+    const history = [oct, wants('2026-10-30', 116_132 + 12_000), NOV_INCOME];
+    const recap = weeklyRecap({ pcts, transactions: history, today: d('2026-11-01') });
+    expect(recap.wants).toEqual({
+      allocationAfterDebt: 136_132,
+      baseAllocation: 136_132,
+      debtDeducted: 0,
+      spent: 128_132,
+      leftover: 8_000,
+      debtOut: 0,
+    });
+  });
+
+  it.each([
+    ['2026-11-01', [oct, wants('2026-10-30', 116_132 + 12_000), NOV_INCOME, wants('2026-11-01', 30_000)]],
+    ['2026-11-15', [...workedExample, wants('2026-11-14', 75_000)]],
+    ['2026-11-08', workedExample.slice(0, 4)],
+  ])('identity on %s: allocationAfterDebt − spent = leftover − debtOut', (today, history) => {
+    const { wants: w } = weeklyRecap({ pcts, transactions: history, today: d(today) });
+    expect(w.allocationAfterDebt - w.spent).toBe(w.leftover - w.debtOut);
   });
 
   it('mid-week (Thu 29 Oct): the November segment exists but has no income yet', () => {
     const recap = weeklyRecap({ pcts, transactions: [oct, NOV_INCOME], today: d('2026-10-29') });
     expect(recap.segments).toHaveLength(2);
-    expect(recap.wants).toMatchObject({ allocation: 116_132, base: 116_132 });
+    expect(recap.wants).toMatchObject({ allocationAfterDebt: 116_132, baseAllocation: 116_132 });
     expect(recap.income).toBe(0); // the 1 Nov income is after today
   });
 
@@ -454,6 +557,6 @@ describe('weekly recap (BOT_SPEC §4)', () => {
       transactions: [wants('2026-10-28', 50_000), NOV_INCOME, wants('2026-11-01', 15_000)],
       today: d('2026-11-01'),
     });
-    expect(recap.wants).toMatchObject({ allocation: 20_000, spent: 65_000, leftover: 5_000, debtOut: 0 });
+    expect(recap.wants).toMatchObject({ allocationAfterDebt: 20_000, spent: 65_000, leftover: 5_000, debtOut: 0 });
   });
 });

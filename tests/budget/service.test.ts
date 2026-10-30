@@ -59,7 +59,7 @@ describe('budget service', () => {
     const recap = await createBudgetService(d).weeklyRecap(user, new Date('2026-11-15T15:00:00.000Z'));
     expect(sumSkipped).toHaveBeenCalledWith('user_A', '2026-11-09', '2026-11-15');
     expect(recap.skipped).toEqual({ amount: 55_000, count: 2 });
-    expect(recap.wants).toMatchObject({ allocation: 110_000, spent: 50_000 });
+    expect(recap.wants).toMatchObject({ allocationAfterDebt: 110_000, spent: 50_000 });
   });
 
   it('income rows without a category map to bucket null', async () => {

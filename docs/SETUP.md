@@ -55,7 +55,7 @@ PowerShell tip: `curl` is an alias for `Invoke-WebRequest`. Use **`curl.exe`** f
    dashboard - Buka dashboard
    bantuan - Cara pakai
    ```
-7. Check that **Vercel → Settings → Cron Jobs** shows both jobs. Trigger one manually to test it:
+7. Check that **Vercel → Settings → Cron Jobs** shows all three jobs (daily reminder, weekly recap, monthly income reminder). Trigger one manually to test it:
    ```bash
    curl.exe -H "Authorization: Bearer <CRON_SECRET>" https://<your-app>.vercel.app/api/cron/daily-reminder
    ```

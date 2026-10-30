@@ -87,6 +87,15 @@ export function createTxRepo(db: Db) {
       });
     },
 
+    /** Income reminders: has the user recorded any income dated in [from, to]? */
+    async hasIncomeInRange(userId: string, from: LocalDate, to: LocalDate) {
+      const found = await db.transaction.findFirst({
+        where: { userId, ...live, type: 'INCOME', ...dateRange(from, to) },
+        select: { id: true },
+      });
+      return found !== null;
+    },
+
     /** Daily reminder: has the user logged anything on this date? */
     async existsOnDate(userId: string, date: LocalDate) {
       const found = await db.transaction.findFirst({

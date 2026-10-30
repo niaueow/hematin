@@ -56,7 +56,7 @@ export function baseAllocations(amount: number, segments: readonly Segment[], mo
   return bases;
 }
 
-// --- ledger: every month from the first budgeted one, chained (§4, §5, §7) ----------------------
+// --- ledger: months chained through wants debt and needs carry-in (§2, §4, §5, §7) --------------
 
 export type SegmentLedger = Segment & {
   ended: boolean;
@@ -70,14 +70,17 @@ export type MonthLedger = {
   end: LocalDate;
   days: number;
   ended: boolean;
-  /** Months before the first month with income don't take part in the debt/carry-in chain. */
-  chained: boolean;
+  /**
+   * Income recorded in this month. Without it the month is NO_BUDGET (§2): income is unknown, not zero, so
+   * the month neither creates nor consumes wants debt / needs carry-in; those wait for the next month with income.
+   */
+  hasIncome: boolean;
   income: number;
   needsMonth: number;
   wantsMonth: number;
   savingsTarget: number;
   segments: SegmentLedger[];
-  wants: { spent: number; remainingMonth: number };
+  wants: { spent: number };
   needs: { carryIn: number; spent: number; remainingMonth: number };
   savings: { recorded: number; bonus: number; total: number; progressPct: number };
 };
@@ -98,9 +101,8 @@ function totals(transactions: readonly EngineTransaction[], from: LocalDate, to:
 }
 
 /**
- * Computes every month from `from` to `through`. The wants debt and needs carry-in chains start at the
- * first month with income (§4 "starting from the user's first segment that has a budget") and run
- * through every later month, including months without income (their bases are 0).
+ * Computes every month from `from` to `through`, starting earlier if needed so debt and carry-in from
+ * the first month with income onward are included. Only months with income take part in the chains (§2).
  */
 export function buildLedger(input: EngineInput, from: MonthKey, through: MonthKey): MonthLedger[] {
   const { pcts, today } = input;
@@ -116,9 +118,9 @@ export function buildLedger(input: EngineInput, from: MonthKey, through: MonthKe
   const ledger: MonthLedger[] = [];
 
   for (const month of monthRange(start, through)) {
-    const chained = firstBudgetMonth !== undefined && month >= firstBudgetMonth;
     const days = daysInMonth(month);
     const monthTotals = totals(transactions, monthStart(month), monthEnd(month));
+    const hasIncome = monthTotals.income > 0;
     const { needsMonth, wantsMonth, savingsTarget } = splitIncome(monthTotals.income, pcts);
     const segments = segmentsOfMonth(month);
     const wantsBases = baseAllocations(wantsMonth, segments, days);
@@ -128,10 +130,10 @@ export function buildLedger(input: EngineInput, from: MonthKey, through: MonthKe
     const segmentLedgers = segments.map((segment, i): SegmentLedger => {
       const segTotals = totals(transactions, segment.start, segment.end);
       const base = wantsBases[i] as number;
-      const debtIn = wantsDebt; // always 0 until the chain starts
+      const debtIn = hasIncome ? wantsDebt : 0;
       const effective = base - debtIn;
-      const debt = Math.max(0, segTotals.wants - effective);
-      wantsDebt = chained ? debt : 0;
+      const debt = hasIncome ? Math.max(0, segTotals.wants - effective) : 0;
+      if (hasIncome) wantsDebt = debt; // a NO_BUDGET month holds the debt for the next month with income
       cumAllowance += needsBases[i] as number;
       return {
         ...segment,
@@ -149,9 +151,9 @@ export function buildLedger(input: EngineInput, from: MonthKey, through: MonthKe
     });
 
     const ended = monthEnd(month) < today;
-    const carryIn = needsCarry;
-    const needsRemaining = needsMonth - carryIn - monthTotals.needs;
-    needsCarry = chained ? Math.max(0, -needsRemaining) : 0;
+    const carryIn = hasIncome ? needsCarry : 0;
+    const needsRemaining = hasIncome ? needsMonth - carryIn - monthTotals.needs : 0;
+    if (hasIncome) needsCarry = Math.max(0, -needsRemaining);
 
     const wantsBonus = sum(segmentLedgers.filter((s) => s.ended).map((s) => s.wants.surplus));
     const needsBonus = ended ? Math.max(0, needsRemaining) : 0;
@@ -164,16 +166,13 @@ export function buildLedger(input: EngineInput, from: MonthKey, through: MonthKe
       end: monthEnd(month),
       days,
       ended,
-      chained,
+      hasIncome,
       income: monthTotals.income,
       needsMonth,
       wantsMonth,
       savingsTarget,
       segments: segmentLedgers,
-      wants: {
-        spent: monthTotals.wants,
-        remainingMonth: sum(segmentLedgers.map((s) => s.wants.effective)) - monthTotals.wants,
-      },
+      wants: { spent: monthTotals.wants },
       needs: { carryIn, spent: monthTotals.needs, remainingMonth: needsRemaining },
       savings: {
         recorded: monthTotals.saving,
@@ -201,9 +200,10 @@ export type BudgetSnapshot = {
     debtIn: number;
     effective: number;
     spent: number;
-    /** effective − spent; negative means this segment is already in debt. */
+    /** effective − spent; negative means this segment is already in debt. 0 when NO_BUDGET. */
     remainingWeek: number;
     dailyPace: number;
+    /** remainingWeek + base of the month's later segments (§4). 0 when NO_BUDGET. */
     remainingMonth: number;
   };
   needs: {
@@ -223,11 +223,13 @@ export function snapshot(input: EngineInput): BudgetSnapshot {
   const ledger = buildLedger(input, month, month)[0] as MonthLedger;
   const current = ledger.segments.find((s) => s.index === segmentOf(today).index) as SegmentLedger;
 
-  const remainingWeek = current.wants.effective - current.wants.spent;
+  const { hasIncome } = ledger;
+  const remainingWeek = hasIncome ? current.wants.effective - current.wants.spent : 0;
+  const laterBases = sum(ledger.segments.filter((s) => s.index > current.index).map((s) => s.wants.base));
   const days = remainingDays(current, today);
   return {
     today,
-    state: ledger.income > 0 ? 'OK' : 'NO_BUDGET',
+    state: hasIncome ? 'OK' : 'NO_BUDGET',
     month: {
       month,
       start: ledger.start,
@@ -246,13 +248,13 @@ export function snapshot(input: EngineInput): BudgetSnapshot {
       spent: current.wants.spent,
       remainingWeek,
       dailyPace: remainingWeek > 0 ? Math.floor(remainingWeek / days) : 0,
-      remainingMonth: ledger.wants.remainingMonth,
+      remainingMonth: remainingWeek + laterBases, // later bases are 0 when NO_BUDGET
     },
     needs: {
       base: current.needs.base,
       cumAllowance: current.needs.cumAllowance,
       spentMTD: ledger.needs.spent,
-      remainingWeek: current.needs.cumAllowance - ledger.needs.spent,
+      remainingWeek: hasIncome ? current.needs.cumAllowance - ledger.needs.spent : 0,
       carryIn: ledger.needs.carryIn,
       remainingMonth: ledger.needs.remainingMonth,
     },
@@ -315,9 +317,15 @@ export type WeeklyRecap = {
   segments: { month: MonthKey; start: LocalDate; end: LocalDate }[];
   needs: { allocation: number; spent: number };
   wants: {
-    /** Sum of the segments' effective allowance (base minus debt carried in). */
-    allocation: number;
-    base: number;
+    /**
+     * What the recap shows as the week's jajan budget: baseAllocation − debtDeducted. Only debt carried in from
+     * before the week is deducted; debt between two segments of the same week is already in `spent`.
+     */
+    allocationAfterDebt: number;
+    /** The prorated allocation before any debt (not shown to the user unless explaining the deduction). */
+    baseAllocation: number;
+    /** Wants debt carried into the week's first segment. */
+    debtDeducted: number;
     spent: number;
     /** Sum of the segments' unspent effective allowance: becomes savings bonus once they end. */
     leftover: number;
@@ -339,7 +347,9 @@ export function weeklyRecap(input: EngineInput): WeeklyRecap {
   const throughMonth = monthOf(week.end > today ? week.end : today);
   const ledger = buildLedger(input, monthOf(week.start), throughMonth);
   const segments = ledger.flatMap((m) => m.segments).filter((s) => s.start <= week.end && s.end >= week.start);
+  const first = segments[0] as SegmentLedger;
   const last = segments[segments.length - 1] as SegmentLedger;
+  const baseAllocation = sum(segments.map((s) => s.wants.base));
   const todayMonth = ledger.find((m) => m.month === monthOf(today)) as MonthLedger;
 
   const weekTotals = totals(
@@ -355,8 +365,9 @@ export function weeklyRecap(input: EngineInput): WeeklyRecap {
     segments: segments.map((s) => ({ month: s.month, start: s.start, end: s.end })),
     needs: { allocation: sum(segments.map((s) => s.needs.base)), spent: weekTotals.needs },
     wants: {
-      allocation: sum(segments.map((s) => s.wants.effective)),
-      base: sum(segments.map((s) => s.wants.base)),
+      allocationAfterDebt: baseAllocation - first.wants.debtIn,
+      baseAllocation,
+      debtDeducted: first.wants.debtIn,
       spent: weekTotals.wants,
       leftover: sum(segments.map((s) => s.wants.surplus)),
       debtOut: last.wants.debt,
