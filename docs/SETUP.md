@@ -25,18 +25,15 @@ PowerShell tip: `curl` is an alias for `Invoke-WebRequest`. Use **`curl.exe`** f
 ## 3. Vercel project settings
 
 1. **Environment Variables:** add every key from `.env.example` with real values, scoped to **Production only**. Don't tick Preview or Development.
-2. **Build Command:**
+2. **Build Command:** nothing to set. `vercel.json` sets `"buildCommand": "npm run build"` (DECISIONS D-022), which overrides the dashboard. It runs:
    ```
-   prisma generate && prisma migrate deploy && npm test && vite build
+   prisma generate && npm test && prisma migrate deploy && vite build
    ```
+   - Tests run before migrations, so a failing test never touches the DB.
    - `migrate deploy` only applies committed migration files. It never generates or resets anything.
-   - If you prefer, run tests before migrations (`npm test && prisma migrate deploy && …`) so a failing test never touches the DB. Recommended.
-3. **Deployments:** optionally disable Preview Deployments (Git settings), since they can't work without env vars anyway.
-
-Recommended final build command:
-```
-prisma generate && npm test && prisma migrate deploy && vite build
-```
+   - Until M1 the two Prisma steps go through `scripts/prisma-guard.mjs`, which skips them while `prisma/schema.prisma` doesn't exist. M1 replaces the scripts with plain `prisma generate` / `prisma migrate deploy` and deletes the guard.
+3. **Node.js version:** pinned to `24.x` by `engines` in `package.json`, which overrides the dashboard setting.
+4. **Deployments:** optionally disable Preview Deployments (Git settings), since they can't work without env vars anyway.
 
 ## 4. First deploy
 
@@ -88,9 +85,10 @@ Schema changes are still made as committed migration files:
 
 | Script | Does |
 |---|---|
-| `build` | `prisma generate && npm test && prisma migrate deploy && vite build` (same as the Vercel build command) |
+| `build` | `prisma generate && npm test && prisma migrate deploy && vite build` (run by Vercel via `vercel.json`; Prisma steps guarded until M1) |
 | `test` | `vitest run` (pure unit tests; must not need a database) |
-| `typecheck` | `tsc --noEmit` |
-| `lint` | `eslint .` |
+| `typecheck` | `tsc --noEmit` (server, tests) + `vue-tsc --noEmit` (web) |
+| `lint` | `eslint .` (also flags several hard rules: `toFixed`, local-time `Date` getters, `setInterval`, `express.static`, raw-unsafe SQL, `v-html`, aliases in `api/`/`server/`) |
+| `format` / `format:check` | Prettier |
 
 Debugging happens through **Vercel → Logs** (structured logs from `server/lib/logger.ts`, without secrets).

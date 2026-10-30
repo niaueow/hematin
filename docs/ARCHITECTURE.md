@@ -59,6 +59,8 @@ Browser / Mini App ──►│  /api/*  ─────────────
 ```
 
 > **Verify at scaffold time:** how Vercel combines a Vite frontend with an Express function in one project. The intended setup is: Vite builds to the output directory, `api/index.ts` exports the Express app, and `vercel.json` rewrites `/api/(.*)` → `/api` and everything else → `/index.html`. Vercel also has zero-config Express detection (it looks for `app|index|server.ts` at the root or in `src/`). Make sure that detection doesn't hijack the SPA, and pick one approach. Record the result in `docs/DECISIONS.md`.
+>
+> **Verified (2026-10-31), see DECISIONS D-022:** the intended setup works as described, with the Vite preset pinned in `vercel.json`. Because Vercel functions don't resolve tsconfig `paths`, code under `api/` and `server/` uses relative `.js` imports. Path aliases are for tests and `web/` only.
 
 ## 3. Request flows
 

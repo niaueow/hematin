@@ -1,0 +1,30 @@
+{
+  // Server, API entry, tests, and root config files.
+  // Vercel compiles api/ with its own bundled TypeScript (5.9) and does NOT support
+  // "paths" at runtime, so code under server/ and api/ uses relative imports with
+  // ".js" extensions. The aliases below are for tests and tooling only (DECISIONS D-022).
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": {
+      "@server/*": ["./server/*"],
+      "@web/*": ["./web/src/*"]
+    }
+  },
+  "include": ["api", "server", "tests", "scripts", "*.ts"],
+  "exclude": ["node_modules", "dist", "web"]
+}
