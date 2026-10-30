@@ -26,7 +26,9 @@ Browser / Mini App ──►│  /api/*  ─────────────
 ├─ server/
 │  ├─ app.ts                # Express app: middleware, routers, error handler
 │  ├─ env.ts                # Zod-validated process.env (fail fast on boot)
-│  ├─ db/prisma.ts          # PrismaClient singleton with Neon adapter
+│  ├─ db/prisma.ts          # PrismaClient singleton with Neon adapter (getPrisma)
+│  ├─ db/repos/             # *Repo.ts: all DB access; userId-first, always in `where`
+│  ├─ db/generated/         # Prisma client (generated, gitignored)
 │  ├─ bot/
 │  │  ├─ bot.ts             # grammY Bot instance + middleware (auth, idempotency)
 │  │  ├─ handlers/          # text, commands, callback queries

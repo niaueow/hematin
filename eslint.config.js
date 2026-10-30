@@ -17,7 +17,7 @@ const localDateProperties = ['getDate', 'getDay', 'getMonth', 'getFullYear', 'ge
 }));
 
 export default tseslint.config(
-  { ignores: ['dist/', 'coverage/', 'node_modules/', '.vercel/'] },
+  { ignores: ['dist/', 'coverage/', 'node_modules/', '.vercel/', 'server/db/generated/'] },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,

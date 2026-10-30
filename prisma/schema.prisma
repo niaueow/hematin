@@ -1,0 +1,246 @@
+// Source: docs/DATA_MODEL.md. Prisma 7: the connection lives in prisma.config.ts (CLI) and in
+// server/db/prisma.ts (runtime, via the Neon driver adapter). Raw SQL extras that Prisma can't
+// express (CHECKs, the partial unique index) live in prisma/migrations/*_constraints.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../server/db/generated"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  MEMBER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum Bucket {
+  NEEDS
+  WANTS
+  SAVINGS
+  INCOME
+}
+
+enum TxType {
+  INCOME
+  EXPENSE
+  SAVING
+}
+
+enum TxSource {
+  BOT
+  WEB
+}
+
+enum ParseMethod {
+  RULE
+  ALIAS
+  LLM
+  USER_PICK
+  MANUAL
+}
+
+enum Verdict {
+  ALLOW
+  CAUTION
+  DENY
+  NO_BUDGET
+}
+
+enum IntentStatus {
+  PENDING
+  BOUGHT
+  SKIPPED
+  EXPIRED
+}
+
+model User {
+  id               String     @id @default(cuid())
+  telegramId       BigInt     @unique
+  telegramUsername String?
+  firstName        String?
+  role             Role       @default(MEMBER)
+  status           UserStatus @default(ACTIVE)
+  botBlocked       Boolean    @default(false)
+  needsPct         Int        @default(50)
+  wantsPct         Int        @default(30)
+  savingsPct       Int        @default(20)
+  timezone         String     @default("Asia/Jakarta")
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  transactions   Transaction[]
+  categories     Category[]
+  aliases        KeywordAlias[]
+  intents        PurchaseIntent[]
+  noSpendDays    NoSpendDay[]
+  sessions       Session[]
+  magicTokens    MagicLinkToken[]
+  invitesCreated Invite[]         @relation("InviteCreator")
+  invitesUsed    Invite[]         @relation("InviteUser")
+}
+
+model Invite {
+  id          String    @id @default(cuid())
+  codeHash    String    @unique // sha256(code); the plain code is never stored
+  createdById String
+  createdBy   User      @relation("InviteCreator", fields: [createdById], references: [id])
+  expiresAt   DateTime
+  usedAt      DateTime?
+  usedById    String?
+  usedBy      User?     @relation("InviteUser", fields: [usedById], references: [id])
+  createdAt   DateTime  @default(now())
+}
+
+/// System categories have userId = null and are seeded. Users may add their own.
+model Category {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  slug      String // "makan", "jajan", ...
+  name      String // "Makan"
+  emoji     String?
+  bucket    Bucket
+  keywords  String[] // default keywords (system categories)
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  transactions Transaction[]
+  aliases      KeywordAlias[]
+
+  @@unique([userId, slug])
+  @@index([userId])
+}
+
+/// Learned per-user mapping, e.g. "cireng" → jajan, created when the user corrects a category.
+model KeywordAlias {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  keyword    String // normalized lowercase
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, keyword])
+}
+
+model Transaction {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  type        TxType
+  amount      Int // rupiah, > 0 (DB CHECK)
+  categoryId  String? // required for EXPENSE and SAVING
+  category    Category?   @relation(fields: [categoryId], references: [id])
+  note        String? // e.g. "cireng"
+  rawText     String? // original chat message (bot only)
+  occurredAt  DateTime    @db.Timestamptz
+  localDate   DateTime    @db.Date // WIB date; drives all budget math
+  source      TxSource
+  parseMethod ParseMethod
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  intent PurchaseIntent?
+
+  @@index([userId, localDate])
+  @@index([userId, type, localDate])
+}
+
+model PurchaseIntent {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+  item          String
+  amount        Int // rupiah, > 0 (DB CHECK)
+  categoryId    String
+  verdict       Verdict
+  status        IntentStatus @default(PENDING)
+  localDate     DateTime     @db.Date
+  expiresAt     DateTime
+  decidedAt     DateTime?
+  transactionId String?      @unique
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  createdAt     DateTime     @default(now())
+
+  @@index([userId, status, localDate])
+}
+
+/// "Hari ini emang ga keluar duit" — suppresses the daily reminder.
+model NoSpendDay {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  localDate DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  @@id([userId, localDate])
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique // sha256(random 32 bytes)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  expiresAt  DateTime
+  lastSeenAt DateTime  @default(now())
+  userAgent  String?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model MagicLinkToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  expiresAt DateTime // now + 5 min
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+/// Short-lived conversation state, e.g. waiting for an amount ("Berapa duitnya?")
+/// or confirming an ambiguous one ("Maksudnya Rp20.000?"). One row per user; overwritten.
+model ChatState {
+  userId    String   @id
+  kind      String // "AWAIT_AMOUNT" | "CONFIRM_AMOUNT" | "AWAIT_CATEGORY"
+  payload   Json // e.g. { item, type, candidateAmount }
+  expiresAt DateTime // now + 10 min
+  updatedAt DateTime @updatedAt
+}
+
+/// Telegram retry protection.
+model ProcessedUpdate {
+  updateId  BigInt   @id
+  createdAt DateTime @default(now())
+}
+
+model CronRun {
+  runKey     String    @id // "daily-reminder:2026-10-30"
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+  stats      Json?
+}
+
+model RateLimit {
+  key       String   @id // "msg:<userId>:<yyyymmddhhmm>" or "llm:<userId>:<yyyymmdd>"
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}

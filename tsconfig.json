@@ -25,6 +25,6 @@
       "@web/*": ["./web/src/*"]
     }
   },
-  "include": ["api", "server", "tests", "scripts", "*.ts"],
+  "include": ["api", "server", "tests", "*.ts"],
   "exclude": ["node_modules", "dist", "web"]
 }

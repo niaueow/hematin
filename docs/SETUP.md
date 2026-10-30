@@ -31,7 +31,6 @@ PowerShell tip: `curl` is an alias for `Invoke-WebRequest`. Use **`curl.exe`** f
    ```
    - Tests run before migrations, so a failing test never touches the DB.
    - `migrate deploy` only applies committed migration files. It never generates or resets anything.
-   - Until M1 the two Prisma steps go through `scripts/prisma-guard.mjs`, which skips them while `prisma/schema.prisma` doesn't exist. M1 replaces the scripts with plain `prisma generate` / `prisma migrate deploy` and deletes the guard.
 3. **Node.js version:** pinned to `24.x` by `engines` in `package.json`, which overrides the dashboard setting.
 4. **Deployments:** optionally disable Preview Deployments (Git settings), since they can't work without env vars anyway.
 
@@ -77,7 +76,18 @@ Rollback:
 ## 6. Writing migrations without a local DB
 
 Schema changes are still made as committed migration files:
-- Preferred: write the migration with `prisma migrate diff` against the current schema and commit the generated SQL in `prisma/migrations/<timestamp>_<name>/migration.sql`. Check the exact command for your Prisma version.
+- Write the migration with `prisma migrate diff` (Prisma 7) between the **previous** schema (from git) and the new one, then commit the SQL as `prisma/migrations/<timestamp>_<name>/migration.sql` (UTC timestamp, later than the last folder):
+  ```bash
+  # Git Bash (PowerShell 5.1's ">" writes UTF-16, which breaks the schema file)
+  git show HEAD:prisma/schema.prisma > /tmp/prev.prisma
+  mkdir prisma/migrations/20261115120000_add_x
+  export DIRECT_URL="postgresql://offline:offline@localhost:1/offline?sslmode=require"
+  npx prisma migrate diff --from-schema /tmp/prev.prisma --to-schema prisma/schema.prisma --script -o prisma/migrations/20261115120000_add_x/migration.sql
+  ```
+  - The dummy `DIRECT_URL` is never contacted. Without **some** datasource URL, Prisma 7 silently prints an **empty** diff. Use `--exit-code` (2 = changes found) if you want to be sure.
+  - Don't use `--from-migrations`: it needs a shadow database.
+  - Raw SQL objects (CHECKs, the partial index in `*_constraints`) aren't in the schema, so schema-to-schema diffs never touch them. Add new ones by hand-writing SQL in the migration.
+  - Data changes (e.g. new default keywords) are hand-written SQL migrations too. Never edit an applied migration.
 - Keep migrations **additive** (add columns/tables; make new columns nullable or give them defaults). Renames or drops need a backup branch and an explicit OK from the owner.
 - **Never** run `prisma migrate dev`, `prisma migrate reset`, or `prisma db push` against the production database.
 
@@ -85,7 +95,8 @@ Schema changes are still made as committed migration files:
 
 | Script | Does |
 |---|---|
-| `build` | `prisma generate && npm test && prisma migrate deploy && vite build` (run by Vercel via `vercel.json`; Prisma steps guarded until M1) |
+| `build` | `prisma generate && npm test && prisma migrate deploy && vite build` (run by Vercel via `vercel.json`) |
+| `postinstall` | `prisma generate` (the client in `server/db/generated/` is gitignored; no DB connection needed) |
 | `test` | `vitest run` (pure unit tests; must not need a database) |
 | `typecheck` | `tsc --noEmit` (server, tests) + `vue-tsc --noEmit` (web) |
 | `lint` | `eslint .` (also flags several hard rules: `toFixed`, local-time `Date` getters, `setInterval`, `express.static`, raw-unsafe SQL, `v-html`, aliases in `api/`/`server/`) |
