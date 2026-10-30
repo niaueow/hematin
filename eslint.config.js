@@ -82,6 +82,35 @@ export default tseslint.config(
     files: ['server/budget/periods.ts'],
     rules: { 'no-restricted-properties': ['error', ...bannedProperties] },
   },
+  {
+    // AGENTS.md rule 3: the engine (and its date module) never read the clock or touch the DB.
+    files: ['server/budget/engine.ts', 'server/budget/periods.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[object.name='Date'][property.name='now']",
+          message: 'Pure module: take "now"/"today" as a parameter (AGENTS.md rule 3).',
+        },
+        {
+          selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+          message: 'Pure module: take "now"/"today" as a parameter (AGENTS.md rule 3).',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/db/**', '@prisma/*', 'prisma', 'prisma/*'],
+              message: 'The engine is pure (AGENTS.md rule 3).',
+            },
+            { group: ['@server/*', '@web/*'], message: 'Use a relative import with .js (DECISIONS D-022).' },
+          ],
+        },
+      ],
+    },
+  },
 
   prettier,
 );

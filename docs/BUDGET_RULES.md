@@ -117,7 +117,7 @@ perDayAfter    = daysAfterToday > 0 ? floor(max(remainingAfter,0) / daysAfterTod
 
 For a **NEEDS** item in a "mau" message, there is no verdict. The bot shows needs `remainingWeek` and offers **[Catat]**.
 
-The user can still tap **[Jadi beli]** after a DENY. The expense is recorded, the debt rolls forward, and the bot replies without shaming (PRD D-011).
+The user can still tap **[Jadi beli]** after a DENY. The expense is recorded, the debt rolls forward, and the bot replies in the BOT_SPEC §5 tone (D-023): it may call out the overspend, but it never refuses (D-011).
 
 ## 7. Savings progress
 
@@ -163,3 +163,16 @@ Income on 1 Nov 2026 = **Rp2.000.000** → needs 1.000.000, wants 600.000, savin
 7. Income added mid-month recomputes past segments.
 8. Editing or deleting a past transaction changes downstream debt and bonus.
 9. WIB date boundaries: a transaction at 23:30 WIB on the 31st (16:30 UTC) belongs to the 31st, and one at 00:30 WIB on the 1st (17:30 UTC on the previous day) belongs to the 1st.
+
+## 10. Interpretations made in M2 (pending owner confirmation)
+
+The rules above leave these cases open. The engine does the following, and each one has a test in `tests/budget/engine.test.ts`. Confirm or change them. A change means editing this file, the engine, and the tests.
+
+| # | Case | What the engine does | Alternative |
+|---|---|---|---|
+| I1 | A month **without income** after the chain has started (e.g. income in Oct, none in Nov) | It stays in the chain with all bases = 0. Wants spending becomes debt that rolls on, and all needs spending becomes carry-in for the next month | Skip such months (no debt or carry-in from them), or reset the chain |
+| I2 | Transactions dated **after today** (possible from the dashboard) | Ignored until their date arrives | Count them immediately |
+| I3 | Needs `remainingWeek` when there's a `carryIn` | Exactly §5: `cumAllowance − needsSpentMTD`, so the carry-in only reduces `remainingMonth`. Example: carry-in 100.000 → week shows 299.999, month 700.000 | `cumAllowance − carryIn − needsSpentMTD` |
+| I4 | `remainingMonthWants` (§4, informational) | Exactly §4: `Σ effective − Σ spent`. ⚠ This counts rolled debt twice (once in `spent`, again in later segments' reduced `effective`). The §8 example gives **335.000**, but under the rules only 360.000 can still be spent (60.000 this week + 140.000 + 140.000 + 20.000) | `remainingWeek + Σ base of the later segments this month` (= 360.000 in §8) |
+| I5 | Weekly recap "Jajan: spent / allocation" | Allocation = Σ `effective` of the week's segments (after debt). Σ `base` is also returned | Show the base |
+| I6 | Recap "sisa jajan jadi bonus" on Sunday night | `leftover` = Σ `surplus` of the week's segments, including the one ending today, because it's a projection: it becomes a real bonus at midnight | — |

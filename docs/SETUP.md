@@ -97,7 +97,7 @@ Schema changes are still made as committed migration files:
 |---|---|
 | `build` | `prisma generate && npm test && prisma migrate deploy && vite build` (run by Vercel via `vercel.json`) |
 | `postinstall` | `prisma generate` (the client in `server/db/generated/` is gitignored; no DB connection needed) |
-| `test` | `vitest run` (pure unit tests; must not need a database) |
+| `test` | `vitest run` with coverage (pure unit tests; must not need a database). Fails if `server/budget/engine.ts` drops below 100% coverage |
 | `typecheck` | `tsc --noEmit` (server, tests) + `vue-tsc --noEmit` (web) |
 | `lint` | `eslint .` (also flags several hard rules: `toFixed`, local-time `Date` getters, `setInterval`, `express.static`, raw-unsafe SQL, `v-html`, aliases in `api/`/`server/`) |
 | `format` / `format:check` | Prettier |

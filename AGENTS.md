@@ -46,7 +46,7 @@ Schema changes: write a migration file (see SETUP.md §6), commit it, and tell t
 4. **Budgets are computed on read.** Never store running balances, "sisa", or bonuses in the DB.
 5. **User scoping.** Every query on user data includes `userId` from `req.user` (API) or the resolved bot user. Never take a `userId` from a request body/query/params. Fetch by ID with `findFirst({ where: { id, userId } })` and return 404 if not found.
 6. **Never refuse to record.** Logging is always accepted, even over budget. Only `ASK_PURCHASE` ("mau X") gets verdicts, and only for WANTS categories.
-7. **All bot strings live in `server/bot/copy.ts`.** Casual Indonesian, ≤ 5 lines, ≤ 2 emoji, concrete numbers, never shaming. See BOT_SPEC §5.
+7. **All bot strings live in `server/bot/copy.ts`.** Casual Indonesian, ≤ 5 lines, ≤ 2 emoji, concrete numbers. Tone per BOT_SPEC §5, which calls out overspending bluntly (D-023). Recording is still never refused.
 8. **LLM output is untrusted.** Validate with Zod and check the slug is in the allowed enum. The amount always comes from `parseAmount`, never from the LLM. Any Groq failure falls back to asking the user.
 9. **Secrets** come only from `server/env.ts` (Zod-validated). Never log tokens, initData, cookies, or magic-link tokens. Never commit `.env`.
 10. **Banned:** `$queryRawUnsafe`, `$executeRawUnsafe`, `v-html` with user content, `eval`, `cors({ origin: '*' })`, `express.static` (it doesn't work on Vercel).

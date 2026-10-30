@@ -12,5 +12,16 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // Runs on every `npm test` (so in the Vercel build too): the budget engine must stay fully covered.
+    coverage: {
+      enabled: true,
+      provider: 'v8',
+      include: ['server/**/*.ts'],
+      exclude: ['server/db/generated/**'],
+      reporter: ['text-summary'],
+      thresholds: {
+        'server/budget/engine.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+      },
+    },
   },
 });

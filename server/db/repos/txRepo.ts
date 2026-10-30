@@ -54,6 +54,15 @@ export function createTxRepo(db: Db) {
       });
     },
 
+    /** Budget engine input: the whole live history up to `to`, with each category's bucket (D-012). */
+    listUpTo(userId: string, to: LocalDate) {
+      return db.transaction.findMany({
+        where: { userId, ...live, ...dateRange(undefined, to) },
+        select: { type: true, amount: true, localDate: true, categoryId: true, category: { select: { bucket: true } } },
+        orderBy: [{ localDate: 'asc' }, { createdAt: 'asc' }],
+      });
+    },
+
     listForUser(userId: string, filter: TransactionFilter = {}) {
       return db.transaction.findMany({
         where: {

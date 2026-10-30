@@ -106,6 +106,7 @@ scopingSuite('txRepo', createTxRepo, [
   ],
   ['findById', (r) => r.findById(USER, 'tx_1')],
   ['listInRange', (r) => r.listInRange(USER, day, day)],
+  ['listUpTo', (r) => r.listUpTo(USER, day)],
   ['listForUser', (r) => r.listForUser(USER, { from: day, type: 'EXPENSE', q: 'cireng', limit: 500 })],
   ['latest', (r) => r.latest(USER, 10, now)],
   ['existsOnDate', (r) => r.existsOnDate(USER, day)],
