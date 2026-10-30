@@ -39,7 +39,9 @@ Browser / Mini App ──►│  /api/*  ─────────────
 │  │  ├─ intent.ts          # ASK_PURCHASE / LOG_* detection (pure)
 │  │  ├─ categorize.ts      # rules → learned aliases → Groq → ask
 │  │  ├─ groq.ts            # Groq client, strict JSON schema, timeout
-│  │  └─ keywords.ts        # default keyword dictionary
+│  │  ├─ keywords.ts        # default keyword dictionary (mirrors the seed) + longest-match matcher
+│  │  ├─ text.ts            # normalize, whole-word phrase matching
+│  │  └─ message.ts         # parseMessage: the deterministic pipeline (pure)
 │  ├─ budget/
 │  │  ├─ periods.ts         # months, segments, WIB date utils (pure)
 │  │  ├─ engine.ts          # wants/needs/savings computations (pure)

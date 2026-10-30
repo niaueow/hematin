@@ -66,6 +66,24 @@ Order (stop at the first hit):
 
 When the user taps **✏️ Ganti kategori** and picks another category, update the transaction and upsert the alias.
 
+### 2.3a Implementation notes (M3, deterministic NLP)
+
+How the rules above are applied where they left room. Covered by `tests/nlp/*.test.ts` (60 real-looking messages in `messages.test.ts`).
+
+- **Which number is the amount.** A number is a *strong* amount if it has a unit, a slang word, thousands separators (`10.000`), or is ≥ 1.000. A bare number < 1.000 is *weak*.
+  - One strong amount wins, and weak numbers next to it are quantities: `nasi padang 2 bungkus 30k` → 30.000, `seblak level 5 15k` → 15.000.
+  - Two strong amounts → MULTIPLE.
+  - No strong amount: one weak number → AMBIGUOUS_SMALL with a ×1.000 candidate; two weak numbers → MULTIPLE.
+  - Times and dates (`10:30`, `31/10`) and numbers glued to letters (`2x`, `kopi20k`) are not amounts.
+- **Separators and decimals.** `.`/`,` followed by groups of exactly 3 digits are thousands separators. Otherwise they're a decimal point, so `1,5jt` = `1.5jt` = 1.500.000 (integer math; amounts that aren't a whole number of rupiah are ignored). A bare decimal (`kopi 1.5`) is AMBIGUOUS_SMALL → 1.500.
+- **Prefixes and suffixes.** `rp`, `rp.` and `idr` mark money but not size: `rp 20` is still AMBIGUOUS_SMALL. A unit may carry `-an` ("sekitar"): `50rb-an` → 50.000.
+- **Units and slang** are small tables in `nlp/amount.ts` (`UNITS`, `SLANG`). The slang values are exactly as listed in §2.1.
+- **Intent.** Triggers match as whole words, anywhere in the message, checked in order: purchase, then income. Then LOG_EXPENSE if any amount was found (even one that needs confirmation), else UNKNOWN. After categorizing, a LOG_EXPENSE in a SAVINGS category becomes LOG_SAVING, and one in an INCOME category becomes LOG_INCOME (`gaji 5jt`).
+- **Categorize only looks at buckets that fit the intent:** LOG_INCOME → INCOME; ASK_PURCHASE → NEEDS/WANTS/SAVINGS; otherwise all. Keywords and aliases match as whole words (`grab` ≠ `grabfood`, `kopi` ≠ `ngopi`), longest first. Aliases only count if they point at a category the user can use.
+- **No amount.** `detectIntent` returns UNKNOWN when there's no trigger and no amount (`warteg`). The bot replies "Berapa duitnya?" when a category matched, and the short help otherwise.
+- **Item** (note + alias key) = the message minus the amount, punctuation and filler words (`FILLER_WORDS` in `nlp/categorize.ts`). The words of the matched keyword are kept (`dapet uang jajan 2jt` → "uang jajan"). If only fillers are left, they're kept (`jajan 10k` → "jajan"). Max 120 characters.
+- **Seed sync.** The default dictionary is read from the DB at runtime. `DEFAULT_CATEGORIES` in `nlp/keywords.ts` mirrors the seed migration for tests, and a test fails if the two drift apart.
+
 ### 2.4 Groq call (`nlp/groq.ts`)
 
 - Model from `GROQ_MODEL` (default `openai/gpt-oss-20b`). Use structured output with `strict: true`.

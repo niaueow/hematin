@@ -18,3 +18,17 @@ describe('the budget engine is pure', () => {
     expect(imports.filter((i) => /prisma|\/db\//i.test(i ?? ''))).toEqual([]);
   });
 });
+
+describe('the deterministic NLP is pure (M3)', () => {
+  const nlp = (file: string) => readFileSync(new URL(`../../server/nlp/${file}`, import.meta.url), 'utf8');
+
+  it.each(['amount.ts', 'intent.ts', 'keywords.ts', 'categorize.ts', 'text.ts', 'message.ts'])(
+    '%s: no DB, network or clock',
+    (file) => {
+      const code = nlp(file);
+      const imports = [...code.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1] ?? '');
+      expect(imports.filter((i) => !i.startsWith('./') && i !== '../budget/engine.js')).toEqual([]);
+      expect(code).not.toMatch(/\bfetch\s*\(|Date\.now\s*\(|new Date\(\s*\)/);
+    },
+  );
+});

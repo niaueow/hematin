@@ -84,8 +84,15 @@ export default tseslint.config(
   },
   {
     // AGENTS.md rule 3: the engine (and its date module) never read the clock or touch the DB.
-    files: ['server/budget/engine.ts', 'server/budget/periods.ts'],
+    // The deterministic NLP (M3) is held to the same rule, plus no network. groq.ts is the exception.
+    files: ['server/budget/engine.ts', 'server/budget/periods.ts', 'server/nlp/**/*.ts'],
+    ignores: ['server/nlp/groq.ts'],
     rules: {
+      'no-restricted-globals': [
+        'error',
+        { name: 'fetch', message: 'Pure module: no network.' },
+        { name: 'setInterval', message: 'Serverless: no timers that outlive the request (AGENTS.md rule 11).' },
+      ],
       'no-restricted-syntax': [
         'error',
         {
@@ -103,7 +110,7 @@ export default tseslint.config(
           patterns: [
             {
               group: ['**/db/**', '@prisma/*', 'prisma', 'prisma/*'],
-              message: 'The engine is pure (AGENTS.md rule 3).',
+              message: 'Pure module: no DB (AGENTS.md rule 3).',
             },
             { group: ['@server/*', '@web/*'], message: 'Use a relative import with .js (DECISIONS D-022).' },
           ],
