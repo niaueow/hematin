@@ -3,7 +3,7 @@ import type { Db } from '../prisma.js';
 
 // One short-lived conversation state per user (e.g. waiting for "Berapa duitnya?"). Overwritten on set.
 
-export type ChatStateKind = 'AWAIT_AMOUNT' | 'CONFIRM_AMOUNT' | 'AWAIT_CATEGORY';
+export type ChatStateKind = 'AWAIT_AMOUNT' | 'CONFIRM_AMOUNT' | 'AWAIT_CATEGORY' | 'CONFIRM_LOG';
 
 export function createChatStateRepo(db: Db) {
   return {

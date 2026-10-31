@@ -1,9 +1,9 @@
 // ALL user-facing Indonesian strings live here (AGENTS.md rule 7). Tone: BOT_SPEC §5 (D-023).
 // ≤ 5 lines, ≤ 2 emoji, 2–3 variants per message type, picked at random so it doesn't feel robotic.
 // Messages are sent as plain text (no parse_mode), so user-provided names can't inject markup.
-// TODO(M6+): verdicts, daily reminder, recap.
+// TODO(M7+): daily reminder, recap.
 
-import type { Bucket, BudgetSnapshot } from '../budget/engine.js';
+import type { Bucket, BudgetSnapshot, PurchaseCheck } from '../budget/engine.js';
 import { formatRupiah as rp } from '../lib/money.js';
 
 type Random = () => number;
@@ -174,6 +174,9 @@ export const BUTTON = {
   amountNo: '❌ Bukan',
   category: (name: string, bucket: Bucket) => `${name} · ${BUCKET_LABEL[bucket]}`,
   historyDelete: (index: number, tx: TxSummary) => `🗑 ${index}. ${txLabel(tx)} ${rp(tx.amount)}`,
+  buy: (emoji: string) => `${emoji} Jadi beli`,
+  skip: '💪 Ga jadi',
+  log: '📝 Catat',
 } as const;
 
 // --- logging (BOT_SPEC §2, §3) -------------------------------------------------------------------
@@ -210,9 +213,6 @@ export const PICK_CANCELLED = 'Oke, ga jadi dicatat.';
 
 /** An old or already-used button (pending questions last 10 minutes). */
 export const EXPIRED = 'Udah kadaluarsa, ketik ulang aja ya.';
-
-export const PURCHASE_COMING_SOON =
-  'Cek "mau X" (boleh beli atau nggak) lagi disiapin 🙏\nKalau udah kebeli, catat aja kayak biasa, misal "donat 35k".';
 
 const NO_BUDGET_LINE = 'Sisa budget belum bisa dihitung: uang jajan bulan ini belum dicatat.';
 
@@ -258,6 +258,99 @@ export const PICK_NEW_CATEGORY = 'Pilih kategori yang bener';
 export const CATEGORY_CHANGED = 'Kategori diganti ✅';
 export const CATEGORY_UNAVAILABLE = 'Kategori itu ga bisa dipakai di sini.';
 export const TX_NOT_FOUND = 'Catatan ini udah ga ada.';
+
+// --- purchase check: "mau X" (BOT_SPEC §3.2, §5; BUDGET_RULES §6) --------------------------------
+
+/** The emoji on "Jadi beli" and in the replies: 🍩 for a donut, otherwise a generic 🛒 (BOT_SPEC §3.2). */
+export const itemEmoji = (item: string) => (/\b(donat|donut)s?\b/.test(item) ? '🍩' : '🛒');
+
+export type VerdictContext = {
+  check: PurchaseCheck;
+  item: string;
+  /** When the current segment ends: "Minggu", or a date when the month ends mid-week ("30 Nov"). */
+  until: string;
+  /** The segment ends on a Sunday, so the next allocation starts on Monday. */
+  endsOnSunday: boolean;
+};
+
+/** "buat 4 hari", or "buat hari ini" on the segment's last day. */
+const forDays = (days: number) => (days > 0 ? `buat ${days} hari` : 'buat hari ini');
+
+/**
+ * The verdict templates of BOT_SPEC §5, filled with BUDGET_RULES §6 numbers. Where a template would say
+ * something false ("udah abis" while some is left), it says how much is left instead.
+ */
+export function verdict({ check, item, until, endsOnSunday }: VerdictContext, random?: Random): string {
+  const emoji = itemEmoji(item);
+  const { remainingWeek: remaining, remainingAfter: after, daysAfterToday: days } = check;
+  switch (check.verdict) {
+    case 'NO_BUDGET':
+      return NO_BUDGET;
+    case 'ALLOW':
+      return pick(
+        [
+          `Gas! ${emoji} Jajanmu minggu ini masih ${rp(remaining)}, abis ini sisa ${rp(after)} ${forDays(days)}. Santuy.`,
+          `Boleh dong 😄 Masih aman kok, sisa jajan ${rp(after)} sampai ${until}.`,
+        ],
+        random,
+      );
+    case 'CAUTION':
+      return pick(
+        [
+          `Hmm bisa sih, tapi abis ini jajanmu tinggal ${rp(after)} buat ${days} hari lagi (≈${rp(check.perDayAfter ?? 0)}/hari) 😬 Tabunganmu udah ${check.savingsProgressPct}% dari target, sayang kalo jebol. Yakin?`,
+          `Boleh… tapi mepet ya. Sisa ${rp(after)} buat ${days} hari. Mau skip dulu biar aman? 👀`,
+        ],
+        random,
+      );
+    case 'DENY': {
+      const left = remaining > 0 ? `tinggal ${rp(remaining)}` : 'udah abis';
+      const variants = [
+        `Waduh, jajan minggu ini ${left} bestie 🥲 Kalau maksa, jatah minggu depan kepotong ${rp(check.nextWeekCut)}. Mending skip dulu, duitnya jadi tabungan aja yuk 💪`,
+      ];
+      // BOT_SPEC §5 ⚠: "Senin jatahmu reset" only if no debt carries into the next segment (and it starts on a Monday).
+      if (check.debtBefore === 0 && endsOnSunday)
+        variants.push(
+          remaining > 0
+            ? `Yah, jatah jajan minggu ini tinggal ${rp(remaining)}, ga cukup. Tahan dulu ya, Senin jatahmu reset 😉`
+            : 'Yah, jatah jajan minggu ini udah habis. Tahan dulu ya, Senin jatahmu reset 😉',
+        );
+      return pick(variants, random);
+    }
+  }
+}
+
+/** "mau" + a NEEDS item: no verdict (BUDGET_RULES §6), just the needs remaining and a [Catat] button. */
+export function needsCheck(category: { name: string }, amount: number, snap: BudgetSnapshot) {
+  const remaining =
+    snap.state === 'NO_BUDGET'
+      ? NO_BUDGET_LINE
+      : `Sisa pokok minggu ini ${rp(snap.needs.remainingWeek)}, abis ini ${rp(snap.needs.remainingWeek - amount)}.`;
+  return `${category.name} itu kebutuhan pokok, ga perlu izin 😄\n${remaining}\nUdah kebeli? Tap Catat.`;
+}
+
+/** Jadi beli: recorded, with the new remaining. Neutral even after a DENY (owner decision for M6). */
+export function bought(item: string, snap: BudgetSnapshot) {
+  const emoji = itemEmoji(item);
+  if (snap.state === 'NO_BUDGET') return `Oke dicatat ${emoji}\n${NO_BUDGET_LINE}`;
+  const { remainingWeek } = snap.wants;
+  if (remainingWeek < 0)
+    return `Oke dicatat ${emoji} Jajan minggu ini lewat ${rp(-remainingWeek)}, nanti dipotong dari jatah minggu depan ya.`;
+  return `Oke dicatat ${emoji} Sisa jajan minggu ini ${rp(remainingWeek)}.`;
+}
+
+/** Ga jadi: praise, and what skipping saved this week (BUDGET_RULES §7, not added to savings). */
+export const skipped = (amount: number, weekTotal: number, random?: Random) =>
+  pick(
+    [
+      `Mantap! 💪 ${rp(amount)} selamat. Total yang kamu selamatkan minggu ini: ${rp(weekTotal)}.`,
+      `Keren, ditahan! 💪 ${rp(amount)} aman. Minggu ini kamu udah nyelamatin ${rp(weekTotal)}.`,
+    ],
+    random,
+  );
+
+/** The intent was already bought or skipped (a second tap). */
+export const INTENT_DECIDED = 'Yang ini udah diputusin 👍';
+export const INTENT_NOT_FOUND = 'Cek ini udah ga ada.';
 
 export const confirmDelete = (tx: TxSummary) => `Hapus catatan ini?\n${describeTx(tx)}`;
 export const txDeleted = (tx: TxSummary) => `🗑 Dihapus: ${describeTx(tx)}`;

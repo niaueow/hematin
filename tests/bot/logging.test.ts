@@ -2,37 +2,14 @@ import { describe, expect, it } from 'vitest';
 import * as copy from '@server/bot/copy.js';
 import { localDateFromDb } from '@server/budget/periods.js';
 import { DEFAULT_CATEGORIES } from '@server/nlp/keywords.js';
-import { buttons, edits, FakeDb, lastCall, makeUser, person, replies, setup, text, toasts } from './harness.js';
+import { buttons, edits, lastCall, MON, person, replies, text, toasts, world } from './harness.js';
 
 // M5, the logging loop (BOT_SPEC §2–§3), through the real bot with in-memory repos. Budget numbers come from
 // the real engine, so the expected replies below are worked out by hand from BUDGET_RULES.
 
 const A = person(111, 'Nia');
 const B = person(222, 'Rani');
-/** Mon 2 Nov 2026, 10:00 WIB. November: S1 = Sun 1 (1 day), S2 = 2–8, … S6 = Mon 30. */
-const MON = new Date('2026-11-02T03:00:00.000Z');
 const minutes = (n: number) => n * 60_000;
-
-/** Two registered users: A (u1, owner) and B (u2). `income` records A's November income up front. */
-function world(options: { now?: Date; income?: boolean } = {}) {
-  const db = new FakeDb();
-  db.users.push(
-    makeUser({ id: 'u1', telegramId: 111n, role: 'OWNER', firstName: 'Nia' }),
-    makeUser({ id: 'u2', telegramId: 222n, firstName: 'Rani' }),
-  );
-  if (options.income) db.seed('u1', 'INCOME', 2_000_000, '2026-11-01', 'sys_uang_jajan');
-  const ctx = setup({ db, now: options.now ?? MON });
-  const clear = () => {
-    ctx.calls.length = 0;
-  };
-  const lastTx = () => {
-    const tx = ctx.db.txs.at(-1);
-    if (!tx) throw new Error('no transaction');
-    return tx;
-  };
-  const live = () => ctx.db.txs.filter((t) => t.deletedAt === null && t.source === 'BOT');
-  return { ...ctx, clear, lastTx, live };
-}
 
 const txButtons = (id: string) => [
   { text: copy.BUTTON.changeCategory, callback_data: `tx:${id}:cat` },
@@ -139,12 +116,10 @@ describe('recording (never refused)', () => {
     expect(replies(ctx.calls)[0]).toMatch(/^💰 Pemasukan Rp3\.000\.000 masuk!\nBulan ini: pokok Rp2\.500\.000/);
   });
 
-  it('"mau nabung 200k" records a saving (owner decision); other "mau X" waits for M6', async () => {
+  it('"mau nabung 200k" records a saving (owner decision), not a purchase check', async () => {
     const ctx = world({ income: true });
-    await ctx.say(A, 'mau donat 35k');
-    expect(replies(ctx.calls)).toEqual([copy.PURCHASE_COMING_SOON]);
-    expect(ctx.live()).toHaveLength(0);
     await ctx.say(A, 'mau nabung 200k');
+    expect(ctx.db.intents).toEqual([]);
     expect(ctx.lastTx()).toMatchObject({ type: 'SAVING', amount: 200_000, categoryId: 'sys_nabung' });
   });
 

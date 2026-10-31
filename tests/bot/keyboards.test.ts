@@ -21,6 +21,9 @@ describe('callback data', () => {
     [{ kind: 'pickCancel', nonce: 'AbC_-123' }, 'px:AbC_-123'],
     [{ kind: 'amount', nonce: 'AbC_-123', confirmed: true }, 'am:AbC_-123:y'],
     [{ kind: 'amount', nonce: 'AbC_-123', confirmed: false }, 'am:AbC_-123:n'],
+    [{ kind: 'intent', intentId: cuid, op: 'buy' }, `pi:${cuid}:buy`],
+    [{ kind: 'intent', intentId: cuid, op: 'skip' }, `pi:${cuid}:skip`],
+    [{ kind: 'logNeeds', nonce: 'AbC_-123' }, 'lg:AbC_-123'],
   ])('%j ⇄ %s (≤ 64 bytes)', (action, data) => {
     expect(encodeCallback(action)).toBe(data);
     expect(Buffer.byteLength(data)).toBeLessThanOrEqual(MAX_CALLBACK_BYTES);
@@ -34,7 +37,8 @@ describe('callback data', () => {
   });
 
   it.each([
-    'pi:1:buy',
+    'pi:1:maybe',
+    'lg:',
     'tx:abc:drop',
     'tx:abc',
     'tx:a b:del',

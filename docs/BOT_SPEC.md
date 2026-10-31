@@ -148,6 +148,17 @@ If the bucket is over budget, add one neutral line. **Never refuse.**
 - Ga jadi → `Mantap! 💪 Rp35.000 selamat. Total yang kamu selamatkan minggu ini: Rp85.000.`
 - Expired (24 h) → button reply: `Udah kadaluarsa, ketik ulang aja ya.`
 
+Implementation notes (M6). Code: `server/bot/flows.ts` (`purchaseCheck`, `onIntent`), templates in `copy.ts` (`verdict`). Tests: `tests/bot/purchase.test.ts`.
+- **WANTS item:** the verdict comes from the engine (`checkPurchase`, BUDGET_RULES §6) and a `PurchaseIntent` (PENDING, `expiresAt` = now + 24 h, `localDate` = the day it was asked) is created. Nothing is recorded. The reply is a random §5 template with `[🍩 Jadi beli] [💪 Ga jadi]` (`pi:<id>:buy|skip`); 🍩 only for a donut, otherwise 🛒.
+- **Template numbers:** `{remaining}` = `remainingWeek`, `{after}` = `remainingAfter`, `{days}` = days left after today (`daysAfterToday`), `{perDay}` = `perDayAfter`, `{pct}` = savings progress, `{cut}` = `nextWeekCut`. On the segment's last day ALLOW says "buat hari ini" / "sampai hari ini". "sampai Minggu" becomes the end date ("sampai 31 Des") when the segment ends with the month mid-week.
+- **DENY wording:** when some wants money is left but not enough, both variants say "tinggal Rp60.000" instead of "udah abis". The "Senin jatahmu reset" variant is only used when no debt carries into the next segment (`debtBefore` = 0) **and** the segment ends on a Sunday, so the next allocation really starts on Monday.
+- **NO_BUDGET:** the §5 NO_BUDGET template, with the same buttons (recording is never refused).
+- **Jadi beli:** in one DB transaction, creates the EXPENSE (`occurredAt` = when tapped, `note` = the item, parseMethod `RULE`, since a PurchaseIntent doesn't store how its category was found) and marks the intent BOUGHT with its `transactionId`. The reply is neutral even after a DENY (owner decision for M6, over §5's "always shame"): `Oke dicatat 🍩 Sisa jajan minggu ini Rp25.000.`, or the §3.1 "lewat …, nanti dipotong dari jatah minggu depan ya" line when over. It carries the usual `[✏️ Ganti kategori] [↩️ Undo]`.
+- **Ga jadi:** SKIPPED, then the week's total of skipped amounts (Mon–Sun of today, by the intents' `localDate`). Not added to savings (BUDGET_RULES §7).
+- **Second tap, or a tap after the other button:** only a toast ("udah diputusin"), nothing changes. Another user's tap finds nothing (scoped by userId). After 24 h: "Udah kadaluarsa", nothing changes; the intent stays PENDING until the daily housekeeping marks it EXPIRED.
+- **NEEDS item** ("mau makan warteg 15k", BUDGET_RULES §6): no verdict and no intent. The reply shows needs remaining this week before and after, with `[📝 Catat]` (`lg:<nonce>`). The pending log is a `ChatState` (`CONFIRM_LOG`, 10 minutes, replaced by the next message like any pending question). Catat records it like a normal log.
+- **Unknown item** ("mau cimol 5k"): category buttons for NEEDS and WANTS only; the pick learns the alias and then shows the verdict (or the needs reply). Missing or ambiguous amounts go through the usual §3.5 questions first.
+
 ### 3.3 Income
 `"dapet uang jajan 2jt"` → record → reply with the new monthly split:
 ```
@@ -175,7 +186,7 @@ Code: `server/bot/flows.ts` (logic), `keyboards.ts` (buttons), `copy.ts` (text).
   - *No category* (`AWAIT_CATEGORY`): buttons for every NEEDS, WANTS and SAVINGS category (the pick decides EXPENSE vs SAVING) plus `Batal`. Income isn't offered: it's recognized by its trigger words. The pick records `USER_PICK` and upserts the alias `item → category`.
   - Buttons carry a nonce of their question. Claiming the question deletes it, so an old keyboard, a second tap, or another user's press does nothing ("Udah kadaluarsa, ketik ulang aja ya").
 - **Rejected amounts.** More than one amount → "satu-satu ya". Out of range (≤ 0 or > Rp100.000.000) → "kayaknya salah ketik", nothing recorded; the user types it again.
-- **`ASK_PURCHASE`** replies "lagi disiapin" until M6 and records nothing.
+- **`ASK_PURCHASE`** is the purchase check (§3.2, M6).
 - **`/sisa`**: wants this week and month, the daily pace (or how far over it is), needs this week and month, savings recorded + bonus vs target. 5 lines. In a `NO_BUDGET` month it shows the §5 NO_BUDGET text.
 - **`/riwayat`** lists the last 10 (newest first) with one 🗑 button each. It's the one reply allowed past 5 lines.
 - **Income nudge (PRD F12).** On the first message of a month that has no income, the bot adds one message asking for it (phrased conditionally, like the monthly reminder). "First" is claimed with a `RateLimit` row `income-nudge:<userId>:<YYYY-MM>` that expires when the month ends. A message that records income doesn't get it, and neither does a reply that already asks for income (`/sisa` in a `NO_BUDGET` month, "Berapa duitnya?" for income).

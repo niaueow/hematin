@@ -11,6 +11,8 @@ import * as copy from './copy.js';
 //   pk:<nonce>:<categoryId>          pick a category for a pending log (USER_PICK)
 //   px:<nonce>                       cancel that pick
 //   am:<nonce>:y|n                   "Maksudnya Rp20.000?"
+//   pi:<intentId>:buy|skip           "mau X": Jadi beli / Ga jadi (ARCHITECTURE §3.2)
+//   lg:<nonce>                       "mau" + a NEEDS item: Catat
 // A nonce ties a button to one pending ChatState, so buttons from an older question do nothing.
 
 export const MAX_CALLBACK_BYTES = 64;
@@ -22,7 +24,9 @@ export type CallbackAction =
   | { kind: 'setCategory'; txId: string; categoryId: string }
   | { kind: 'pick'; nonce: string; categoryId: string }
   | { kind: 'pickCancel'; nonce: string }
-  | { kind: 'amount'; nonce: string; confirmed: boolean };
+  | { kind: 'amount'; nonce: string; confirmed: boolean }
+  | { kind: 'intent'; intentId: string; op: 'buy' | 'skip' }
+  | { kind: 'logNeeds'; nonce: string };
 
 function format(action: CallbackAction): string {
   switch (action.kind) {
@@ -36,6 +40,10 @@ function format(action: CallbackAction): string {
       return `px:${action.nonce}`;
     case 'amount':
       return `am:${action.nonce}:${action.confirmed ? 'y' : 'n'}`;
+    case 'intent':
+      return `pi:${action.intentId}:${action.op}`;
+    case 'logNeeds':
+      return `lg:${action.nonce}`;
   }
 }
 
@@ -52,6 +60,8 @@ const PATTERNS: [RegExp, (m: string[]) => CallbackAction][] = [
   [new RegExp(`^pk:(${ID}):(${ID})$`), (m) => ({ kind: 'pick', nonce: m[1]!, categoryId: m[2]! })],
   [new RegExp(`^px:(${ID})$`), (m) => ({ kind: 'pickCancel', nonce: m[1]! })],
   [new RegExp(`^am:(${ID}):(y|n)$`), (m) => ({ kind: 'amount', nonce: m[1]!, confirmed: m[2] === 'y' })],
+  [new RegExp(`^pi:(${ID}):(buy|skip)$`), (m) => ({ kind: 'intent', intentId: m[1]!, op: m[2] as 'buy' | 'skip' })],
+  [new RegExp(`^lg:(${ID})$`), (m) => ({ kind: 'logNeeds', nonce: m[1]! })],
 ];
 
 /** Null for anything we didn't produce. */
@@ -75,6 +85,16 @@ export const confirmDeleteKeyboard = (txId: string) =>
   new InlineKeyboard()
     .text(copy.BUTTON.confirmDelete, encodeCallback({ kind: 'tx', txId, op: 'del' }))
     .text(copy.BUTTON.cancel, encodeCallback({ kind: 'tx', txId, op: 'no' }));
+
+/** Under a purchase check (BOT_SPEC §3.2). */
+export const purchaseKeyboard = (intentId: string, emoji: string) =>
+  new InlineKeyboard()
+    .text(copy.BUTTON.buy(emoji), encodeCallback({ kind: 'intent', intentId, op: 'buy' }))
+    .text(copy.BUTTON.skip, encodeCallback({ kind: 'intent', intentId, op: 'skip' }));
+
+/** Under a "mau" for a NEEDS item: no verdict, just a way to record it (BUDGET_RULES §6). */
+export const needsKeyboard = (nonce: string) =>
+  new InlineKeyboard().text(copy.BUTTON.log, encodeCallback({ kind: 'logNeeds', nonce }));
 
 export const amountKeyboard = (nonce: string, candidate: number) =>
   new InlineKeyboard()

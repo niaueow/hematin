@@ -42,7 +42,7 @@ export type BotRepos = {
   categories: Pick<CategoryRepo, 'listUsable' | 'findUsableById'>;
   aliases: Pick<AliasRepo, 'listForUser' | 'upsert'>;
   chatStates: Pick<ChatStateRepo, 'get' | 'set' | 'take' | 'clear'>;
-  intents: Pick<IntentRepo, 'sumSkipped'>;
+  intents: Pick<IntentRepo, 'create' | 'findById' | 'markBought' | 'markSkipped' | 'sumSkipped'>;
 };
 
 export type BotDeps = {

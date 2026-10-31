@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as copy from '@server/bot/copy.js';
-import { snapshot, type EngineTransaction } from '@server/budget/engine.js';
+import { checkPurchase, snapshot, type EngineTransaction } from '@server/budget/engine.js';
 import { parseLocalDate } from '@server/budget/periods.js';
 
 // BOT_SPEC §5: ≤ 5 lines, ≤ 2 emoji. Every variant of every message (except the /riwayat list).
@@ -64,7 +64,6 @@ const messages: [string, string][] = [
   ['pickCategory', copy.pickCategory('x'.repeat(200), 5_000)],
   ['PICK_CANCELLED', copy.PICK_CANCELLED],
   ['EXPIRED', copy.EXPIRED],
-  ['PURCHASE_COMING_SOON', copy.PURCHASE_COMING_SOON],
   ['expenseLogged wants', copy.expenseLogged(jajan, 15_000, ok)],
   ['expenseLogged wants over', copy.expenseLogged(jajan, 150_000, overspent)],
   ['expenseLogged needs over', copy.expenseLogged(makan, 1_200_000, overspent)],
@@ -87,6 +86,29 @@ const messages: [string, string][] = [
   ['CATEGORY_CHANGED', copy.CATEGORY_CHANGED],
   ['CATEGORY_UNAVAILABLE', copy.CATEGORY_UNAVAILABLE],
   ['TX_NOT_FOUND', copy.TX_NOT_FOUND],
+  // M6: purchase check, every verdict × every variant (long item names included)
+  ...[
+    [ok, 10_000],
+    [ok, 35_000],
+    [ok, 500_000],
+    [exact, 20_000],
+    [overspent, 20_000],
+    [noBudget, 35_000],
+  ].flatMap(([s, amount]) =>
+    [0, 0.99].map((r): [string, string] => {
+      const check = checkPurchase(s as typeof ok, amount as number);
+      const context = { check, item: 'donat '.repeat(30), until: 'Minggu', endsOnSunday: true };
+      return [`verdict ${check.verdict} ${r}`, copy.verdict(context, () => r)];
+    }),
+  ),
+  ['needsCheck', copy.needsCheck(makan, 15_000, ok)],
+  ['needsCheck NO_BUDGET', copy.needsCheck(makan, 15_000, noBudget)],
+  ['bought', copy.bought('donat', ok)],
+  ['bought over', copy.bought('boba', overspent)],
+  ['bought NO_BUDGET', copy.bought('boba', noBudget)],
+  ...both((r) => copy.skipped(35_000, 85_000, r)).map((t): [string, string] => ['skipped', t]),
+  ['INTENT_DECIDED', copy.INTENT_DECIDED],
+  ['INTENT_NOT_FOUND', copy.INTENT_NOT_FOUND],
 ];
 
 describe('copy rules', () => {
@@ -144,6 +166,22 @@ describe('BOT_SPEC §3 reply formats', () => {
     expect(copy.sisa(ok).split('\n')[2]).toBe('Rp28.000/hari buat 5 hari lagi');
     expect(copy.sisa(exact).split('\n')[2]).toBe('Jatah jajan minggu ini udah abis.');
     expect(copy.sisa(overspent).split('\n')[2]).toBe('Jajan udah lewat Rp10.000, jatah minggu depan kepotong segitu.');
+  });
+});
+
+describe('purchase check copy', () => {
+  it.each([
+    ['donat', '🍩'],
+    ['donat kentang', '🍩'],
+    ['donuts', '🍩'],
+    ['boba', '🛒'],
+    ['', '🛒'],
+  ])('itemEmoji(%j) → %s', (item, emoji) => {
+    expect(copy.itemEmoji(item)).toBe(emoji);
+  });
+
+  it('the skip variants differ', () => {
+    expect(copy.skipped(1, 1, () => 0)).not.toBe(copy.skipped(1, 1, () => 0.99));
   });
 });
 

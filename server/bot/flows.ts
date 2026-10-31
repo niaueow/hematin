@@ -1,7 +1,18 @@
 import type { InlineKeyboard } from 'grammy';
 import { z } from 'zod';
-import type { Bucket, TxType } from '../budget/engine.js';
-import { addDays, localDateFromDb, monthEnd, monthOf, monthStart, startOfDayWib, todayWib } from '../budget/periods.js';
+import { checkPurchase, type Bucket, type TxType } from '../budget/engine.js';
+import {
+  addDays,
+  isoWeekday,
+  localDateFromDb,
+  monthEnd,
+  monthOf,
+  monthStart,
+  startOfDayWib,
+  toLocalDate,
+  todayWib,
+  weekOf,
+} from '../budget/periods.js';
 import type { BudgetService } from '../budget/service.js';
 import type { Category, ParseMethod, Transaction, User } from '../db/generated/client.js';
 import type { ChatStateKind } from '../db/repos/chatStateRepo.js';
@@ -11,8 +22,8 @@ import type { BotRepos } from './bot.js';
 import * as copy from './copy.js';
 import * as kb from './keyboards.js';
 
-// The logging loop (BOT_SPEC §2–§3): text → parse → record / ask, the buttons under each reply, and the
-// /sisa, /pemasukan, /riwayat, /undo, /kategori commands. Free of grammY: every function takes the resolved
+// The logging loop (BOT_SPEC §2–§3): text → parse → record / ask, the buttons under each reply, the
+// "mau X" purchase check (§3.2), and the /sisa, /pemasukan, /riwayat, /undo, /kategori commands. Free of grammY: every function takes the resolved
 // user and returns what to send; bot.ts does the sending. Every record a button points at is loaded again,
 // scoped to the user who pressed it (SECURITY §3.3). Recording is never refused (AGENTS.md rule 6).
 
@@ -39,6 +50,8 @@ export type FlowDeps = {
 
 /** Pending questions ("Berapa duitnya?", "Maksudnya Rp20.000?", category buttons) last 10 minutes. */
 export const PENDING_TTL_MS = 10 * 60_000;
+/** A purchase check's buttons work for 24 hours (PRD US2). */
+export const INTENT_TTL_MS = 24 * 3_600_000;
 /** /undo looks back this far. */
 export const UNDO_WINDOW_MS = 24 * 3_600_000;
 export const HISTORY_SIZE = 10;
@@ -59,7 +72,21 @@ const PickPending = z.object({
   item: z.string(),
   rawText: z.string(),
   occurredAt: z.iso.datetime(),
+  /** From a "mau X": the pick leads to the purchase check instead of recording. */
+  ask: z.boolean().optional(),
 });
+/** CONFIRM_LOG: a "mau" for a NEEDS item, waiting for [Catat]. */
+const NeedsPending = z.object({
+  nonce: z.string(),
+  amount: z.number().int().positive(),
+  item: z.string(),
+  categoryId: z.string(),
+  parseMethod: z.enum(['RULE', 'ALIAS', 'LLM', 'USER_PICK']),
+  rawText: z.string(),
+  occurredAt: z.iso.datetime(),
+});
+
+class IntentTaken extends Error {}
 
 /** Categories a transaction of this type can have. EXPENSE and SAVING can swap (the bucket decides); income stays income. */
 const bucketsForType = (type: TxType): readonly Bucket[] =>
@@ -104,7 +131,7 @@ export function createFlows(deps: FlowDeps) {
   }
 
   /** Stores the one pending question (overwriting any older one) and returns the nonce for its buttons. */
-  async function setPending(userId: string, kind: ChatStateKind, payload: Record<string, string | number>) {
+  async function setPending(userId: string, kind: ChatStateKind, payload: Record<string, string | number | boolean>) {
     const nonce = deps.newNonce();
     await repos.chatStates.set(userId, kind, { ...payload, nonce }, new Date(deps.now().getTime() + PENDING_TTL_MS));
     return nonce;
@@ -167,7 +194,10 @@ export function createFlows(deps: FlowDeps) {
     const log = { amount: amount.amount, item, rawText: input.rawText, occurredAt: input.occurredAt };
     switch (intent) {
       case 'ASK_PURCHASE':
-        return { text: copy.PURCHASE_COMING_SOON }; // TODO(M6): verdicts
+        // ("mau nabung" was already turned into LOG_SAVING by refineIntent.)
+        if (category && parsed.parseMethod)
+          return purchaseCheck(user, { ...log, category, parseMethod: parsed.parseMethod });
+        return askCategory(user, context.categories, { ...origin, amount: amount.amount, item, ask: true });
       case 'LOG_INCOME':
         // Income without a matching category is fine (BOT_SPEC §2.3a).
         return record(user, { ...log, type: 'INCOME', category, parseMethod: parsed.parseMethod ?? 'RULE' });
@@ -191,10 +221,12 @@ export function createFlows(deps: FlowDeps) {
   async function askCategory(
     user: User,
     categories: readonly Category[],
-    pending: { amount: number; item: string; rawText: string; occurredAt: string },
+    pending: { amount: number; item: string; rawText: string; occurredAt: string; ask?: boolean },
   ): Promise<Reply> {
     const nonce = await setPending(user.id, 'AWAIT_CATEGORY', pending);
-    const choices = categories.filter((c) => c.bucket !== 'INCOME'); // income is recognized by its trigger words
+    // Income is recognized by its trigger words. A "mau X" is about spending: NEEDS or WANTS.
+    const buckets: readonly Bucket[] = pending.ask ? ['NEEDS', 'WANTS'] : ['NEEDS', 'WANTS', 'SAVINGS'];
+    const choices = categories.filter((c) => buckets.includes(c.bucket));
     return {
       text: copy.pickCategory(pending.item, pending.amount),
       keyboard: kb.categoryKeyboard(
@@ -215,6 +247,11 @@ export function createFlows(deps: FlowDeps) {
       const category = await r.categories.findUsableById(user.id, categoryId);
       if (!usable(category, 'EXPENSE')) return 'expired' as const;
       const p = pending.data;
+      if (p.ask) {
+        if (category.bucket === 'SAVINGS') return 'expired' as const; // not offered for a "mau X"
+        if (p.item) await r.aliases.upsert(user.id, p.item, category.id);
+        return { kind: 'ask' as const, purchase: p, category };
+      }
       const tx = await r.transactions.create(user.id, {
         type: typeForBucket(category.bucket),
         amount: p.amount,
@@ -226,11 +263,123 @@ export function createFlows(deps: FlowDeps) {
         parseMethod: 'USER_PICK',
       });
       if (p.item) await r.aliases.upsert(user.id, p.item, category.id);
-      return { tx, category };
+      return { kind: 'logged' as const, tx, category };
     });
     if (picked === 'expired') return { toast: copy.EXPIRED, edit: { text: copy.EXPIRED } };
     if (picked === 'cancelled') return { edit: { text: copy.PICK_CANCELLED } };
+    if (picked.kind === 'ask') {
+      const { purchase: p, category } = picked;
+      const log = { amount: p.amount, item: p.item, rawText: p.rawText, occurredAt: new Date(p.occurredAt) };
+      return { edit: await purchaseCheck(user, { ...log, category, parseMethod: 'USER_PICK' }) };
+    }
     return { edit: await logReply(user, picked.tx, picked.category) };
+  }
+
+  type Purchase = {
+    amount: number;
+    item: string;
+    rawText: string;
+    occurredAt: Date;
+    category: Pick<Category, 'id' | 'name' | 'bucket'>;
+    parseMethod: ParseMethod;
+  };
+
+  /**
+   * "mau X" (BUDGET_RULES §6, BOT_SPEC §3.2). WANTS: a verdict and a PENDING PurchaseIntent; nothing is
+   * recorded until "Jadi beli". NEEDS: no verdict, the needs remaining and [Catat].
+   */
+  async function purchaseCheck(user: User, purchase: Purchase): Promise<Reply> {
+    const { amount, item, category } = purchase;
+    const snap = await deps.budget.snapshot(user, deps.now());
+    if (category.bucket !== 'WANTS') {
+      const nonce = await setPending(user.id, 'CONFIRM_LOG', {
+        amount,
+        item,
+        categoryId: category.id,
+        parseMethod: purchase.parseMethod,
+        rawText: purchase.rawText,
+        occurredAt: purchase.occurredAt.toISOString(),
+      });
+      return { text: copy.needsCheck(category, amount, snap), keyboard: kb.needsKeyboard(nonce) };
+    }
+    const check = checkPurchase(snap, amount);
+    const intent = await repos.intents.create(user.id, {
+      item,
+      amount,
+      categoryId: category.id,
+      verdict: check.verdict,
+      localDate: toLocalDate(purchase.occurredAt),
+      expiresAt: new Date(deps.now().getTime() + INTENT_TTL_MS),
+    });
+    const endsOnSunday = isoWeekday(snap.segment.end) === 7;
+    const until =
+      snap.segment.end === snap.today ? 'hari ini' : endsOnSunday ? 'Minggu' : copy.formatDate(snap.segment.end);
+    return {
+      text: copy.verdict({ check, item, until, endsOnSunday }, deps.random),
+      keyboard: kb.purchaseKeyboard(intent.id, copy.itemEmoji(item)),
+      asksIncome: check.verdict === 'NO_BUDGET',
+    };
+  }
+
+  /** Jadi beli / Ga jadi, scoped to the caller. A second tap, or another user's, changes nothing. */
+  async function onIntent(user: User, intentId: string, op: 'buy' | 'skip'): Promise<CallbackResult> {
+    const now = deps.now();
+    const intent = await repos.intents.findById(user.id, intentId);
+    if (!intent) return { toast: copy.INTENT_NOT_FOUND };
+    if (intent.status === 'BOUGHT' || intent.status === 'SKIPPED') return { toast: copy.INTENT_DECIDED };
+    if (intent.status === 'EXPIRED' || intent.expiresAt <= now)
+      return { toast: copy.EXPIRED, edit: { text: copy.EXPIRED } };
+
+    if (op === 'skip') {
+      if (!(await repos.intents.markSkipped(user.id, intent.id, now))) return { toast: copy.INTENT_DECIDED };
+      const week = weekOf(todayWib(now));
+      const saved = await repos.intents.sumSkipped(user.id, week.start, week.end);
+      return { edit: { text: copy.skipped(intent.amount, saved.amount, deps.random) } };
+    }
+
+    // Record the expense and mark the intent BOUGHT together: if the intent was decided meanwhile, nothing is recorded.
+    let tx;
+    try {
+      tx = await deps.transaction(async (r) => {
+        const created = await r.transactions.create(user.id, {
+          type: 'EXPENSE',
+          amount: intent.amount,
+          categoryId: intent.categoryId,
+          note: intent.item || null,
+          rawText: null,
+          occurredAt: now,
+          source: 'BOT',
+          parseMethod: 'RULE', // PurchaseIntent doesn't keep how the category was found
+        });
+        if (!(await r.intents.markBought(user.id, intent.id, created.id, now))) throw new IntentTaken();
+        return created;
+      });
+    } catch (err) {
+      if (err instanceof IntentTaken) return { toast: copy.INTENT_DECIDED };
+      throw err;
+    }
+    const snap = await deps.budget.snapshot(user, now);
+    return { edit: { text: copy.bought(intent.item, snap), keyboard: kb.txKeyboard(tx.id) } };
+  }
+
+  /** [Catat] under a "mau" for a NEEDS item. */
+  async function onLogNeeds(user: User, nonce: string): Promise<CallbackResult> {
+    const state = await repos.chatStates.take(user.id, 'CONFIRM_LOG', nonce, deps.now());
+    const pending = NeedsPending.safeParse(state?.payload);
+    const category = pending.success ? await repos.categories.findUsableById(user.id, pending.data.categoryId) : null;
+    if (!pending.success || !usable(category, 'EXPENSE')) return { toast: copy.EXPIRED, edit: { text: copy.EXPIRED } };
+    const p = pending.data;
+    return {
+      edit: await record(user, {
+        type: typeForBucket(category.bucket),
+        amount: p.amount,
+        category,
+        item: p.item,
+        rawText: p.rawText,
+        occurredAt: new Date(p.occurredAt),
+        parseMethod: p.parseMethod,
+      }),
+    };
   }
 
   async function onAmount(user: User, nonce: string, confirmed: boolean): Promise<CallbackResult> {
@@ -323,6 +472,10 @@ export function createFlows(deps: FlowDeps) {
           return onPick(user, action.nonce, null);
         case 'amount':
           return onAmount(user, action.nonce, action.confirmed);
+        case 'intent':
+          return onIntent(user, action.intentId, action.op);
+        case 'logNeeds':
+          return onLogNeeds(user, action.nonce);
         default:
           return {}; // not ours (or forged): just acknowledge
       }

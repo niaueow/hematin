@@ -1,7 +1,8 @@
 import { createBot, type BotRepos } from '@server/bot/bot.js';
 import { localDateFromDb, localDateToDb, toLocalDate, type LocalDate } from '@server/budget/periods.js';
-import type { Category, KeywordAlias, Transaction, User } from '@server/db/generated/client.js';
+import type { Category, KeywordAlias, PurchaseIntent, Transaction, User } from '@server/db/generated/client.js';
 import type { ChatStateKind } from '@server/db/repos/chatStateRepo.js';
+import type { NewIntent } from '@server/db/repos/intentRepo.js';
 import type { NewTransaction, TransactionPatch } from '@server/db/repos/txRepo.js';
 import { DEFAULT_CATEGORIES } from '@server/nlp/keywords.js';
 
@@ -47,6 +48,7 @@ export class FakeDb {
   categories: Category[] = systemCategories();
   aliases: KeywordAlias[] = [];
   chatStates = new Map<string, ChatState>();
+  intents: PurchaseIntent[] = [];
   writes: string[] = [];
   now: () => Date = () => new Date('2026-11-01T03:00:00.000Z');
 
@@ -234,13 +236,50 @@ export class FakeDb {
         },
       },
       intents: {
-        sumSkipped: () => ok({ amount: 0, count: 0 }),
+        create: (userId: string, intent: NewIntent) => {
+          const row: PurchaseIntent = {
+            ...intent,
+            id: `pi${this.intents.length + 1}`,
+            userId,
+            localDate: localDateToDb(intent.localDate),
+            status: 'PENDING',
+            decidedAt: null,
+            transactionId: null,
+            createdAt: this.now(),
+          };
+          this.intents.push(row);
+          this.writes.push('intent.create');
+          return ok(row);
+        },
+        findById: (userId: string, id: string) =>
+          ok(this.intents.find((i) => i.id === id && i.userId === userId) ?? null),
+        markBought: (userId: string, id: string, transactionId: string, now: Date) => {
+          const intent = this.pendingIntent(userId, id, now);
+          if (!intent) return ok(false);
+          Object.assign(intent, { status: 'BOUGHT', decidedAt: now, transactionId });
+          this.writes.push('intent.markBought');
+          return ok(true);
+        },
+        markSkipped: (userId: string, id: string, now: Date) => {
+          const intent = this.pendingIntent(userId, id, now);
+          if (!intent) return ok(false);
+          Object.assign(intent, { status: 'SKIPPED', decidedAt: now });
+          this.writes.push('intent.markSkipped');
+          return ok(true);
+        },
+        sumSkipped: (userId: string, from: LocalDate, to: LocalDate) => {
+          const rows = this.intents.filter((i) => {
+            const date = localDateFromDb(i.localDate);
+            return i.userId === userId && i.status === 'SKIPPED' && from <= date && date <= to;
+          });
+          return ok({ amount: rows.reduce((sum, i) => sum + i.amount, 0), count: rows.length });
+        },
       },
     } as unknown as BotRepos;
   }
 
   async transaction<T>(fn: (repos: BotRepos) => Promise<T>): Promise<T> {
-    const keys = ['users', 'invites', 'txs', 'aliases', 'chatStates', 'writes'] as const;
+    const keys = ['users', 'invites', 'txs', 'aliases', 'chatStates', 'intents', 'writes'] as const;
     const snapshot = structuredClone(Object.fromEntries(keys.map((k) => [k, this[k]])));
     try {
       return await fn(this.repos());
@@ -248,6 +287,10 @@ export class FakeDb {
       Object.assign(this, snapshot);
       throw err;
     }
+  }
+
+  private pendingIntent(userId: string, id: string, now: Date) {
+    return this.intents.find((i) => i.id === id && i.userId === userId && i.status === 'PENDING' && i.expiresAt > now);
   }
 
   /** A transaction recorded some other way (e.g. earlier), dated `date` at 12:00 WIB. */
@@ -325,7 +368,14 @@ export function callback(from: From, data = 'pi:1:buy', chat?: { id: number; typ
 }
 
 export function setup(
-  options: { db?: FakeDb; ownerId?: number; now?: Date; apiError?: (method: string) => number | null } = {},
+  options: {
+    db?: FakeDb;
+    ownerId?: number;
+    now?: Date;
+    /** Picks copy variants; 0 → always the first. */
+    random?: () => number;
+    apiError?: (method: string) => number | null;
+  } = {},
 ) {
   const db = options.db ?? new FakeDb();
   const clock = { now: options.now ?? new Date('2026-11-01T03:00:00.000Z') };
@@ -340,7 +390,7 @@ export function setup(
       transaction: (fn) => db.transaction(fn),
       ownerTelegramId: String(options.ownerId ?? OWNER_ID),
       now: () => clock.now,
-      random: () => 0,
+      random: options.random ?? (() => 0),
       newInviteCode: () => `CODE_${String(++codes).padStart(16, '0')}`,
       newNonce: () => `n${++nonces}`,
     },
@@ -380,3 +430,28 @@ export function buttons(call: Call | undefined): Button[] {
 }
 
 export const lastCall = (calls: Call[], method: string) => calls.filter((c) => c.method === method).at(-1);
+
+/** Mon 2 Nov 2026, 10:00 WIB. November: S1 = Sun 1 (1 day), S2 = 2–8, … S6 = Mon 30. */
+export const MON = new Date('2026-11-02T03:00:00.000Z');
+
+/** Two registered users: A (u1, owner, Telegram 111) and B (u2, 222). `income` records A's 2.000.000 on 1 Nov. */
+export function world(options: { now?: Date; income?: boolean; random?: () => number } = {}) {
+  const db = new FakeDb();
+  db.users.push(
+    makeUser({ id: 'u1', telegramId: 111n, role: 'OWNER', firstName: 'Nia' }),
+    makeUser({ id: 'u2', telegramId: 222n, firstName: 'Rani' }),
+  );
+  if (options.income) db.seed('u1', 'INCOME', 2_000_000, '2026-11-01', 'sys_uang_jajan');
+  const ctx = setup({ db, now: options.now ?? MON, ...(options.random && { random: options.random }) });
+  const clear = () => {
+    ctx.calls.length = 0;
+  };
+  const lastTx = () => {
+    const tx = ctx.db.txs.at(-1);
+    if (!tx) throw new Error('no transaction');
+    return tx;
+  };
+  /** Live transactions the bot recorded (seeded history excluded). */
+  const live = () => ctx.db.txs.filter((t) => t.deletedAt === null && t.source === 'BOT');
+  return { ...ctx, clear, lastTx, live };
+}
