@@ -98,6 +98,7 @@ On callback: load the intent **where userId = caller**, check that it's PENDING 
 - Idempotent per run: `INSERT CronRun(runKey="daily-reminder:2026-10-30")`. On conflict, skip.
 - Daily reminder: for each ACTIVE user with no transaction (any type, not deleted) where `localDate = today` and no `NoSpendDay` for today → send the reminder. If there's no income this month, add the income nudge.
 - Weekly recap: for each ACTIVE user, summarize the Mon–Sun week ending today.
+- Implemented (M8): `server/jobs/dailyReminder.ts` (+ `housekeeping.ts`), `weeklyRecap.ts`, sharing `deliver.ts` (concurrency 5, per-user try/catch, 403 → `botBlocked`; 429s are retried by the bot API's `retryOn429` transformer). Run keys use the WIB date: `daily-reminder:YYYY-MM-DD`, `weekly-recap:YYYY-MM-DD`. `CronRun.stats` holds the counts (and the housekeeping counts for the daily job).
 - Monthly income reminder (`server/jobs/monthlyIncomeReminder.ts`, implemented): for each ACTIVE, not `botBlocked` user with no INCOME dated in the current WIB month → send `INCOME_REMINDER`. Run key `income-reminder:YYYY-MM`.
 - Send with a small concurrency limit and catch per-user errors (one blocked user must not stop the loop). If a user has blocked the bot (403), mark them `botBlocked=true`.
 

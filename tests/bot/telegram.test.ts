@@ -1,4 +1,4 @@
-import { GrammyError, type Transformer } from 'grammy';
+import { GrammyError, InlineKeyboard, type Transformer } from 'grammy';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BotBlockedError,
@@ -77,6 +77,13 @@ describe('createTelegramSender (cron)', () => {
     const sendMessage = vi.fn(() => Promise.resolve({}));
     await createTelegramSender({ sendMessage } as never)('111', 'halo');
     expect(sendMessage).toHaveBeenCalledWith('111', 'halo');
+  });
+
+  it('sends a keyboard when given one', async () => {
+    const sendMessage = vi.fn(() => Promise.resolve({}));
+    const keyboard = new InlineKeyboard().text('ok', 'ns:2026-11-02');
+    await createTelegramSender({ sendMessage } as never)('111', 'halo', { keyboard });
+    expect(sendMessage).toHaveBeenCalledWith('111', 'halo', { reply_markup: keyboard });
   });
 
   it('403 → BotBlockedError; anything else is rethrown', async () => {

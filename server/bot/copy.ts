@@ -1,7 +1,6 @@
 // ALL user-facing Indonesian strings live here (AGENTS.md rule 7). Tone: BOT_SPEC §5 (D-023).
 // ≤ 5 lines, ≤ 2 emoji, 2–3 variants per message type, picked at random so it doesn't feel robotic.
 // Messages are sent as plain text (no parse_mode), so user-provided names can't inject markup.
-// TODO(M7+): daily reminder, recap.
 
 import type { Bucket, BudgetSnapshot, PurchaseCheck } from '../budget/engine.js';
 import { formatRupiah as rp } from '../lib/money.js';
@@ -138,6 +137,13 @@ export function formatDayRange(start: string, end: string): string {
   return start === end ? formatDate(start) : `${Number(start.slice(8))}–${formatDate(end)}`;
 }
 
+/** A Mon–Sun week, which may span two months: "2–8 Nov" or "26 Okt – 1 Nov". */
+export function formatWeekRange(start: string, end: string): string {
+  return start.slice(0, 7) === end.slice(0, 7)
+    ? formatDayRange(start, end)
+    : `${formatDate(start)} – ${formatDate(end)}`;
+}
+
 /** What replies need to know about a transaction. */
 export type TxSummary = {
   type: 'INCOME' | 'EXPENSE' | 'SAVING';
@@ -178,6 +184,7 @@ export const BUTTON = {
   buy: (emoji: string) => `${emoji} Jadi beli`,
   skip: '💪 Ga jadi',
   log: '📝 Catat',
+  noSpend: '✅ Hari ini emang ga keluar duit',
 } as const;
 
 // --- logging (BOT_SPEC §2, §3) -------------------------------------------------------------------
@@ -406,4 +413,87 @@ export function categoryList(categories: readonly { name: string; bucket: Bucket
     .filter(({ names }) => names.length > 0)
     .map(({ bucket, names }) => `${BUCKET_TITLE[bucket]}: ${names.join(', ')}`);
   return ['📂 Kategori', ...lines].join('\n');
+}
+
+// --- daily reminder (BOT_SPEC §4) ----------------------------------------------------------------
+
+/** For a month without income. Conditional, like the other income prompts (D-024). */
+const DAILY_INCOME_LINE = 'Btw uang jajan bulan ini belum dicatat. Kalau udah dapet, ketik "uang jajan 2jt" ya.';
+
+/** ~21:00 WIB to users with nothing logged today; sent with the [✅ Hari ini emang ga keluar duit] button. */
+export function dailyReminder(askIncome: boolean, random?: Random) {
+  const text = pick(
+    [
+      'Hai! Hari ini belum ada catatan nih 👀\nAda jajan atau ongkos yang kelewat? Ketik aja, misal "gojek 15k".',
+      'Malam! Hari ini belum ada yang dicatat 📒\nKalau ada yang kelewat, ketik aja, misal "warteg 12k".',
+    ],
+    random,
+  );
+  return askIncome ? `${text}\n${DAILY_INCOME_LINE}` : text;
+}
+
+/** After the button: no reminder for that day. `date` is shown when it isn't today (an old reminder's button). */
+export const noSpendMarked = (date: string | null) =>
+  date === null
+    ? 'Sip, hari ini dicatat ga keluar duit 👍 Hemat!'
+    : `Sip, ${formatDate(date)} dicatat ga keluar duit 👍`;
+
+// --- weekly recap (BOT_SPEC §4) ------------------------------------------------------------------
+
+export type RecapView = {
+  week: { start: string; end: string };
+  needs: { allocation: number; spent: number };
+  wants: {
+    allocationAfterDebt: number;
+    baseAllocation: number;
+    debtDeducted: number;
+    spent: number;
+    leftover: number;
+    debtOut: number;
+  };
+  /** Spend this week (all expenses). */
+  expense: number;
+  /** Top categories by spend, largest first (at most 3 are shown). */
+  top: readonly { name: string; amount: number }[];
+  skipped: { amount: number; count: number };
+  savings: { progressPct: number; target: number };
+};
+
+function savingsTail(pct: number) {
+  if (pct >= 100) return 'Target udah tercapai, mantap!';
+  if (pct >= 50) return 'Dikit lagi!';
+  return 'Ayo dikejar!';
+}
+
+/**
+ * Sunday ~22:00 WIB, the BOT_SPEC §4 format. Like /riwayat it may run past 5 lines and 2 emoji: the spec's
+ * own example does. Lines without anything to say (no bonus, nothing skipped) are left out.
+ */
+export function weeklyRecap(view: RecapView) {
+  const { week, needs, wants, skipped, savings } = view;
+  const hasBudget = needs.allocation + wants.baseAllocation > 0;
+  const lines = [`📊 Rekap minggu ini (${formatWeekRange(week.start, week.end)})`];
+  if (hasBudget) {
+    lines.push(`Pokok: ${rp(needs.spent)} / ${rp(needs.allocation)}`);
+    const ok = wants.spent <= wants.allocationAfterDebt ? ' ✅' : '';
+    const debt = wants.debtDeducted > 0 ? ` (udah dipotong utang ${rp(wants.debtDeducted)})` : '';
+    lines.push(`Jajan: ${rp(wants.spent)} / ${rp(wants.allocationAfterDebt)}${ok}${debt}`);
+  } else {
+    lines.push(`Pengeluaran: ${rp(view.expense)}. Budget-nya belum bisa dihitung, uang jajan belum dicatat.`);
+  }
+  if (view.top.length > 0)
+    lines.push(
+      `Top: ${view.top
+        .slice(0, 3)
+        .map((c) => `${c.name} ${rp(c.amount)}`)
+        .join(' · ')}`,
+    );
+  if (hasBudget && wants.leftover > 0)
+    lines.push(`🎉 Sisa jajan ${rp(wants.leftover)} jadi bonus nabung. Jangan lupa transfer ke tabunganmu ya!`);
+  if (hasBudget && wants.debtOut > 0)
+    lines.push(`😬 Jajan minggu ini boros, lewat ${rp(wants.debtOut)}. Jatah minggu depan kepotong segitu.`);
+  if (skipped.count > 0) lines.push(`💪 Kamu skip jajan ${skipped.count}x, hemat ${rp(skipped.amount)}`);
+  if (savings.target > 0)
+    lines.push(`Tabungan bulan ini: ${savings.progressPct}% dari target. ${savingsTail(savings.progressPct)}`);
+  return lines.join('\n');
 }

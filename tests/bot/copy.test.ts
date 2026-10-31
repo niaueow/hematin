@@ -108,6 +108,12 @@ const messages: [string, string][] = [
   ['bought NO_BUDGET', copy.bought('boba', noBudget)],
   ...both((r) => copy.skipped(35_000, 85_000, r)).map((t): [string, string] => ['skipped', t]),
   ['INTENT_DECIDED', copy.INTENT_DECIDED],
+  // M8: daily reminder (the weekly recap follows the longer BOT_SPEC §4 format, like /riwayat)
+  ...[true, false].flatMap((askIncome) =>
+    both((r) => copy.dailyReminder(askIncome, r)).map((t): [string, string] => ['dailyReminder', t]),
+  ),
+  ['noSpendMarked today', copy.noSpendMarked(null)],
+  ['noSpendMarked earlier', copy.noSpendMarked('2026-10-30')],
   ['INTENT_NOT_FOUND', copy.INTENT_NOT_FOUND],
 ];
 
@@ -192,6 +198,12 @@ describe('formatting helpers', () => {
     ['2026-08-09', '9 Agu'],
   ])('formatDate %s → %s', (date, expected) => {
     expect(copy.formatDate(date)).toBe(expected);
+  });
+
+  it('formatWeekRange: one month, or two', () => {
+    expect(copy.formatWeekRange('2026-11-02', '2026-11-08')).toBe('2–8 Nov');
+    expect(copy.formatWeekRange('2026-10-26', '2026-11-01')).toBe('26 Okt – 1 Nov');
+    expect(copy.formatWeekRange('2026-12-28', '2027-01-03')).toBe('28 Des – 3 Jan');
   });
 
   it('formatDayRange', () => {

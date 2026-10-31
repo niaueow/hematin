@@ -237,6 +237,16 @@ Tabungan bulan ini: 65% dari target. Dikit lagi!
 For weeks that cross months, show the totals for the whole Mon–Sun week. Allocations are the sum of the segments.
 - "Jajan: spent / X" uses `wants.allocationAfterDebt` (base minus debt carried in from last week). When `debtDeducted > 0`, say so next to it so it isn't mistaken for the base, e.g. `Jajan: Rp95.000 / Rp110.000 (udah dipotong utang Rp30.000)`. `baseAllocation` is only for that explanation.
 
+### Implementation notes (M8)
+
+Code: `server/jobs/dailyReminder.ts`, `weeklyRecap.ts`, `housekeeping.ts`, `deliver.ts`. Tests: `tests/jobs/*.test.ts`, `tests/bot/noSpend.test.ts`.
+- **Daily reminder recipients:** ACTIVE, not `botBlocked`, no transaction (any type, not deleted) dated today (WIB), no `NoSpendDay` today. The income line is phrased conditionally ("Kalau udah dapet…", like the other income prompts after D-024).
+- **The button** (`ns:<date>`) records a `NoSpendDay` for whoever pressed it, for the reminder's date. It's accepted up to a week old (an old reminder's button), never for a future date.
+- **Weekly recap recipients:** ACTIVE, not `botBlocked`, with some activity that week (an expense, income, saving, or a skipped "mau"). Everyone else gets nothing.
+- **Recap lines:** the first three (title, Pokok, Jajan) are always there. "Top" lists up to 3 categories. The 🎉 bonus line (with the transfer reminder) appears when `leftover > 0`, and on Sunday night it includes the segment ending today (BUDGET_RULES §10 I6). A 😬 line calls out debt carried into next week (`debtOut > 0`, D-023 tone). 💪 appears when "mau" checks were skipped. The savings line uses the month of today. ✅ after Jajan means spent ≤ allocation. In a week without income in either month, the recap shows the total spend and says the budget can't be computed. Like `/riwayat`, the recap may run past 5 lines and 2 emoji (the spec's own example does).
+- **Both jobs run once per WIB date** (`CronRun`), so a manual call uses up that day's run (SETUP §4 step 7).
+- **Housekeeping** runs at the end of the daily job (DATA_MODEL "Housekeeping"), each step on its own, with failures logged and the others still running.
+
 ## 5. Copy guide (`bot/copy.ts`)
 
 - Casual Indonesian, "kamu", warm, a bit cheeky. Like a friend who's careful with money, not a parent.

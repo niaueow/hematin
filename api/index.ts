@@ -10,12 +10,18 @@ import { createChatStateRepo } from '../server/db/repos/chatStateRepo.js';
 import { createCronRunRepo } from '../server/db/repos/cronRunRepo.js';
 import { createIntentRepo } from '../server/db/repos/intentRepo.js';
 import { createInviteRepo } from '../server/db/repos/inviteRepo.js';
+import { createMagicTokenRepo } from '../server/db/repos/magicTokenRepo.js';
+import { createNoSpendRepo } from '../server/db/repos/noSpendRepo.js';
 import { createProcessedUpdateRepo } from '../server/db/repos/processedUpdateRepo.js';
 import { createRateLimitRepo } from '../server/db/repos/rateLimitRepo.js';
+import { createSessionRepo } from '../server/db/repos/sessionRepo.js';
 import { createTxRepo } from '../server/db/repos/txRepo.js';
 import { createUserRepo } from '../server/db/repos/userRepo.js';
 import { getEnv } from '../server/env.js';
+import { createBudgetService } from '../server/budget/service.js';
+import { runDailyReminder } from '../server/jobs/dailyReminder.js';
 import { runMonthlyIncomeReminder } from '../server/jobs/monthlyIncomeReminder.js';
+import { runWeeklyRecap } from '../server/jobs/weeklyRecap.js';
 import { logger } from '../server/lib/logger.js';
 import { classifyWithGroq } from '../server/nlp/groq.js';
 
@@ -34,6 +40,7 @@ const botRepos = (db: Db): BotRepos => ({
   aliases: createAliasRepo(db),
   chatStates: createChatStateRepo(db),
   intents: createIntentRepo(db),
+  noSpendDays: createNoSpendRepo(db),
 });
 
 const bot = createBot(env.TELEGRAM_BOT_TOKEN, {
@@ -75,6 +82,35 @@ export default createApp({
   },
   cron: {
     secret: env.CRON_SECRET,
+    dailyReminder: (now) =>
+      runDailyReminder(
+        {
+          users: createUserRepo(prisma),
+          tx: createTxRepo(prisma),
+          noSpend: createNoSpendRepo(prisma),
+          cronRuns: createCronRunRepo(prisma),
+          housekeeping: {
+            processedUpdates: createProcessedUpdateRepo(prisma),
+            rateLimits: createRateLimitRepo(prisma),
+            magicTokens: createMagicTokenRepo(prisma),
+            intents: createIntentRepo(prisma),
+            sessions: createSessionRepo(prisma),
+          },
+          send: createTelegramSender(bot.api),
+        },
+        now,
+      ),
+    weeklyRecap: (now) =>
+      runWeeklyRecap(
+        {
+          users: createUserRepo(prisma),
+          budget: createBudgetService({ txRepo: createTxRepo(prisma), intentRepo: createIntentRepo(prisma) }),
+          categories: createCategoryRepo(prisma),
+          cronRuns: createCronRunRepo(prisma),
+          send: createTelegramSender(bot.api),
+        },
+        now,
+      ),
     incomeReminder: (now) =>
       runMonthlyIncomeReminder(
         {

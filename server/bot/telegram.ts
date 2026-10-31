@@ -1,4 +1,4 @@
-import { GrammyError, type Api, type Transformer } from 'grammy';
+import { GrammyError, type Api, type InlineKeyboard, type Transformer } from 'grammy';
 
 // Outbound Telegram calls (ARCHITECTURE §6). Installed as grammY API transformers, so the bot's replies and
 // the cron jobs' messages behave the same:
@@ -55,13 +55,14 @@ export async function ignoreNotModified(edit: Promise<unknown>): Promise<void> {
   }
 }
 
-export type SendText = (chatId: string, text: string) => Promise<void>;
+export type SendText = (chatId: string, text: string, options?: { keyboard?: InlineKeyboard }) => Promise<void>;
 
-/** For cron jobs: send a plain message; a 403 becomes BotBlockedError. Install retryOn429 on `api` first. */
+/** For cron jobs: send a plain-text message; a 403 becomes BotBlockedError. Install retryOn429 on `api` first. */
 export function createTelegramSender(api: Pick<Api, 'sendMessage'>): SendText {
-  return async (chatId, text) => {
+  return async (chatId, text, options) => {
     try {
-      await api.sendMessage(chatId, text);
+      if (options?.keyboard) await api.sendMessage(chatId, text, { reply_markup: options.keyboard });
+      else await api.sendMessage(chatId, text);
     } catch (err) {
       if (isBlockedError(err)) throw new BotBlockedError();
       throw err;

@@ -24,6 +24,7 @@ describe('callback data', () => {
     [{ kind: 'intent', intentId: cuid, op: 'buy' }, `pi:${cuid}:buy`],
     [{ kind: 'intent', intentId: cuid, op: 'skip' }, `pi:${cuid}:skip`],
     [{ kind: 'logNeeds', nonce: 'AbC_-123' }, 'lg:AbC_-123'],
+    [{ kind: 'noSpend', date: '2026-11-02' }, 'ns:2026-11-02'],
   ])('%j ⇄ %s (≤ 64 bytes)', (action, data) => {
     expect(encodeCallback(action)).toBe(data);
     expect(Buffer.byteLength(data)).toBeLessThanOrEqual(MAX_CALLBACK_BYTES);
@@ -38,6 +39,8 @@ describe('callback data', () => {
 
   it.each([
     'pi:1:maybe',
+    'ns:2026-1-2',
+    'ns:today',
     'lg:',
     'tx:abc:drop',
     'tx:abc',

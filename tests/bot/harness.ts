@@ -49,6 +49,7 @@ export class FakeDb {
   aliases: KeywordAlias[] = [];
   chatStates = new Map<string, ChatState>();
   intents: PurchaseIntent[] = [];
+  noSpendDays: { userId: string; localDate: string }[] = [];
   writes: string[] = [];
   now: () => Date = () => new Date('2026-11-01T03:00:00.000Z');
 
@@ -232,6 +233,14 @@ export class FakeDb {
         clear: (userId: string) => {
           this.chatStates.delete(userId);
           this.writes.push('chatState.clear');
+          return ok(undefined);
+        },
+      },
+      noSpendDays: {
+        mark: (userId: string, date: LocalDate) => {
+          if (!this.noSpendDays.some((d) => d.userId === userId && d.localDate === date))
+            this.noSpendDays.push({ userId, localDate: date });
+          this.writes.push('noSpend.mark');
           return ok(undefined);
         },
       },

@@ -8,6 +8,7 @@ import {
   monthEnd,
   monthOf,
   monthStart,
+  parseLocalDate,
   startOfDayWib,
   toLocalDate,
   todayWib,
@@ -67,6 +68,8 @@ export const INTENT_TTL_MS = 24 * 3_600_000;
 /** /undo looks back this far. */
 export const UNDO_WINDOW_MS = 24 * 3_600_000;
 export const HISTORY_SIZE = 10;
+/** How old a daily reminder's "ga keluar duit" button may be. */
+export const NO_SPEND_WINDOW_DAYS = 7;
 
 // ChatState payloads are our own JSON, but they come back from the DB: validate before use.
 const AmountPending = z.object({
@@ -403,6 +406,24 @@ export function createFlows(deps: FlowDeps) {
     return { edit: { text: copy.bought(intent.item, snap), keyboard: kb.txKeyboard(tx.id) } };
   }
 
+  /**
+   * [✅ Hari ini emang ga keluar duit] under the daily reminder: a NoSpendDay for the caller. The date comes
+   * from the button, so it's checked: a real date, not in the future, at most a week old.
+   */
+  async function onNoSpend(user: User, date: string): Promise<CallbackResult> {
+    const today = todayWib(deps.now());
+    let day;
+    try {
+      day = parseLocalDate(date);
+    } catch {
+      return {};
+    }
+    if (day > today || day < addDays(today, -NO_SPEND_WINDOW_DAYS))
+      return { toast: copy.EXPIRED, edit: { text: copy.EXPIRED } };
+    await repos.noSpendDays.mark(user.id, day);
+    return { edit: { text: copy.noSpendMarked(day === today ? null : day) } };
+  }
+
   /** [Catat] under a "mau" for a NEEDS item. */
   async function onLogNeeds(user: User, nonce: string): Promise<CallbackResult> {
     const state = await repos.chatStates.take(user.id, 'CONFIRM_LOG', nonce, deps.now());
@@ -523,6 +544,8 @@ export function createFlows(deps: FlowDeps) {
           return onIntent(user, action.intentId, action.op);
         case 'logNeeds':
           return onLogNeeds(user, action.nonce);
+        case 'noSpend':
+          return onNoSpend(user, action.date);
         default:
           return {}; // not ours (or forged): just acknowledge
       }

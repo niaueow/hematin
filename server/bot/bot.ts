@@ -8,6 +8,7 @@ import type { CategoryRepo } from '../db/repos/categoryRepo.js';
 import type { ChatStateRepo } from '../db/repos/chatStateRepo.js';
 import type { IntentRepo } from '../db/repos/intentRepo.js';
 import type { InviteRepo } from '../db/repos/inviteRepo.js';
+import type { NoSpendRepo } from '../db/repos/noSpendRepo.js';
 import type { ProcessedUpdateRepo } from '../db/repos/processedUpdateRepo.js';
 import type { RateLimitRepo } from '../db/repos/rateLimitRepo.js';
 import type { TxRepo } from '../db/repos/txRepo.js';
@@ -43,6 +44,7 @@ export type BotRepos = {
   aliases: Pick<AliasRepo, 'listForUser' | 'upsert'>;
   chatStates: Pick<ChatStateRepo, 'get' | 'set' | 'take' | 'clear'>;
   intents: Pick<IntentRepo, 'create' | 'findById' | 'markBought' | 'markSkipped' | 'sumSkipped'>;
+  noSpendDays: Pick<NoSpendRepo, 'mark'>;
 };
 
 export type BotDeps = {

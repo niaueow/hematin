@@ -65,11 +65,12 @@ PowerShell tip: `curl` is an alias for `Invoke-WebRequest`. Use **`curl.exe`** f
    dashboard - Buka dashboard
    bantuan - Cara pakai
    ```
-7. Check that **Vercel → Settings → Cron Jobs** shows all three jobs (daily reminder, weekly recap, monthly income reminder). To check the cron auth, call one manually: without the header → 401; with it → 501 until the daily reminder is built.
+7. Check that **Vercel → Settings → Cron Jobs** shows all three jobs (daily reminder, weekly recap, monthly income reminder). To test one by hand (without the header → 401):
    ```powershell
    curl.exe -H "Authorization: Bearer <CRON_SECRET>" <APP_URL>/api/cron/daily-reminder
+   curl.exe -H "Authorization: Bearer <CRON_SECRET>" <APP_URL>/api/cron/weekly-recap
    ```
-   Don't trigger `/api/cron/income-reminder` by hand unless you mean to: it really sends, and it uses up that month's single run.
+   The response is `{"ok":true,"stats":{...}}` with how many were sent, skipped, blocked or failed. These really send, and each job runs **once per WIB date** (`CronRun`): a manual call uses up that day's run, so the scheduled one that evening does nothing (`"alreadyRan":true`). Test after 21:00 WIB, or accept missing that day's reminder. The daily reminder only goes to users with nothing logged today, and the recap only to users with activity this week. The same applies to `/api/cron/income-reminder`, once per month.
 
 ## 5. Every deploy after that
 

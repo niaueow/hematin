@@ -7,13 +7,16 @@ const errorCode = (res: request.Response) => (res.body as ErrorBody).error.code;
 
 const CRON_SECRET = 'c'.repeat(32);
 const incomeReminder = vi.fn(() => Promise.resolve({ sent: 1 }));
+const dailyReminder = vi.fn(() => Promise.resolve({ sent: 2 }));
+const weeklyRecap = vi.fn(() => Promise.resolve({ sent: 3 }));
+const jobs = { dailyReminder, weeklyRecap, incomeReminder };
 const WEBHOOK_SECRET = 'w'.repeat(32);
 const handleUpdate = vi.fn(() => Promise.resolve());
 
 describe('Express app', () => {
   const app = createApp({
     version: 'test123',
-    cron: { secret: CRON_SECRET, incomeReminder },
+    cron: { secret: CRON_SECRET, ...jobs },
     telegram: { webhookSecret: WEBHOOK_SECRET, handleUpdate },
   });
 
@@ -43,37 +46,34 @@ describe('Express app', () => {
     expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Not found' } });
   });
 
-  it.each(['/api/cron/daily-reminder', '/api/cron/weekly-recap'])('GET %s returns 501 for now', async (path) => {
-    const res = await request(app).get(path).set('authorization', `Bearer ${CRON_SECRET}`);
-    expect(res.status).toBe(501);
-    expect(errorCode(res)).toBe('NOT_IMPLEMENTED');
-  });
-
   describe('cron auth (Authorization: Bearer CRON_SECRET)', () => {
     it.each([
       ['missing', undefined],
       ['wrong secret', `Bearer ${'x'.repeat(32)}`],
       ['no Bearer prefix', CRON_SECRET],
       ['secret with extra text', `Bearer ${CRON_SECRET}x`],
-    ])('%s → 401, job not run', async (_name, header) => {
-      incomeReminder.mockClear();
-      const req = request(app).get('/api/cron/income-reminder');
-      const res = await (header === undefined ? req : req.set('authorization', header));
-      expect(res.status).toBe(401);
-      expect(errorCode(res)).toBe('UNAUTHORIZED');
-      expect(incomeReminder).not.toHaveBeenCalled();
+    ])('%s → 401, no job runs', async (_name, header) => {
+      Object.values(jobs).forEach((job) => job.mockClear());
+      for (const path of ['daily-reminder', 'weekly-recap', 'income-reminder']) {
+        const req = request(app).get(`/api/cron/${path}`);
+        const res = await (header === undefined ? req : req.set('authorization', header));
+        expect(res.status).toBe(401);
+        expect(errorCode(res)).toBe('UNAUTHORIZED');
+      }
+      Object.values(jobs).forEach((job) => expect(job).not.toHaveBeenCalled());
     });
 
-    it('also guards the not-yet-implemented cron routes', async () => {
-      expect((await request(app).get('/api/cron/daily-reminder')).status).toBe(401);
-    });
-
-    it('correct secret runs the income reminder and returns its stats', async () => {
-      incomeReminder.mockClear();
-      const res = await request(app).get('/api/cron/income-reminder').set('authorization', `Bearer ${CRON_SECRET}`);
+    it.each([
+      ['daily-reminder', dailyReminder, { sent: 2 }],
+      ['weekly-recap', weeklyRecap, { sent: 3 }],
+      ['income-reminder', incomeReminder, { sent: 1 }],
+    ] as const)('correct secret runs %s and returns its stats', async (path, job, stats) => {
+      job.mockClear();
+      const res = await request(app).get(`/api/cron/${path}`).set('authorization', `Bearer ${CRON_SECRET}`);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ ok: true, stats: { sent: 1 } });
-      expect(incomeReminder).toHaveBeenCalledTimes(1);
+      expect(res.body).toEqual({ ok: true, stats });
+      expect(job).toHaveBeenCalledTimes(1);
+      expect((job.mock.calls[0] as unknown as [Date])[0]).toBeInstanceOf(Date);
     });
   });
 

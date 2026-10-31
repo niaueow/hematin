@@ -13,6 +13,7 @@ import * as copy from './copy.js';
 //   am:<nonce>:y|n                   "Maksudnya Rp20.000?"
 //   pi:<intentId>:buy|skip           "mau X": Jadi beli / Ga jadi (ARCHITECTURE §3.2)
 //   lg:<nonce>                       "mau" + a NEEDS item: Catat
+//   ns:<YYYY-MM-DD>                  daily reminder: "Hari ini emang ga keluar duit"
 // A nonce ties a button to one pending ChatState, so buttons from an older question do nothing.
 
 export const MAX_CALLBACK_BYTES = 64;
@@ -26,7 +27,8 @@ export type CallbackAction =
   | { kind: 'pickCancel'; nonce: string }
   | { kind: 'amount'; nonce: string; confirmed: boolean }
   | { kind: 'intent'; intentId: string; op: 'buy' | 'skip' }
-  | { kind: 'logNeeds'; nonce: string };
+  | { kind: 'logNeeds'; nonce: string }
+  | { kind: 'noSpend'; date: string };
 
 function format(action: CallbackAction): string {
   switch (action.kind) {
@@ -44,6 +46,8 @@ function format(action: CallbackAction): string {
       return `pi:${action.intentId}:${action.op}`;
     case 'logNeeds':
       return `lg:${action.nonce}`;
+    case 'noSpend':
+      return `ns:${action.date}`;
   }
 }
 
@@ -62,6 +66,7 @@ const PATTERNS: [RegExp, (m: string[]) => CallbackAction][] = [
   [new RegExp(`^am:(${ID}):(y|n)$`), (m) => ({ kind: 'amount', nonce: m[1]!, confirmed: m[2] === 'y' })],
   [new RegExp(`^pi:(${ID}):(buy|skip)$`), (m) => ({ kind: 'intent', intentId: m[1]!, op: m[2] as 'buy' | 'skip' })],
   [new RegExp(`^lg:(${ID})$`), (m) => ({ kind: 'logNeeds', nonce: m[1]! })],
+  [/^ns:(\d{4}-\d{2}-\d{2})$/, (m) => ({ kind: 'noSpend', date: m[1]! })],
 ];
 
 /** Null for anything we didn't produce. */
@@ -127,3 +132,7 @@ export function historyKeyboard(txs: readonly (copy.TxSummary & { id: string })[
   );
   return keyboard;
 }
+
+/** Under the daily reminder (BOT_SPEC §4). */
+export const noSpendKeyboard = (date: string) =>
+  new InlineKeyboard().text(copy.BUTTON.noSpend, encodeCallback({ kind: 'noSpend', date }));
