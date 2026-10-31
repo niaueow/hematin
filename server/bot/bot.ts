@@ -1,1 +1,180 @@
-// TODO: grammY Bot instance + middleware (auth, idempotency via ProcessedUpdate). See docs/BOT_SPEC.md.
+import { randomBytes } from 'node:crypto';
+import { Bot, Composer, type Context } from 'grammy';
+import type { UserFromGetMe } from 'grammy/types';
+import type { User } from '../db/generated/client.js';
+import type { InviteRepo } from '../db/repos/inviteRepo.js';
+import type { ProcessedUpdateRepo } from '../db/repos/processedUpdateRepo.js';
+import type { RateLimitRepo } from '../db/repos/rateLimitRepo.js';
+import type { UserRepo } from '../db/repos/userRepo.js';
+import { hitRateLimit, MESSAGES_PER_MINUTE } from '../lib/rateLimit.js';
+import { sha256Hex } from '../lib/secrets.js';
+import * as copy from './copy.js';
+import { isBlockedError } from './telegram.js';
+
+// The grammY bot (ARCHITECTURE §3.1). Middleware order:
+//   1. idempotency (ProcessedUpdate)  2. private chats only  3. resolve user (strangers stop here)
+//   4. rate limit (known users)       5. handlers
+// Strangers (unknown or disabled users) get exactly one canned reply and cause no DB writes besides the
+// ProcessedUpdate row, except the two ways in: the one-time owner bootstrap and a valid invite (SECURITY §2).
+
+export type BotContext = Context & { user?: User };
+
+export type BotRepos = {
+  users: Pick<UserRepo, 'findByTelegramId' | 'ownerExists' | 'create' | 'setBotBlocked'>;
+  invites: Pick<InviteRepo, 'create' | 'consume'>;
+  processedUpdates: Pick<ProcessedUpdateRepo, 'markProcessed'>;
+  rateLimits: Pick<RateLimitRepo, 'hit'>;
+};
+
+export type BotDeps = {
+  repos: BotRepos;
+  /** Runs `fn` in one DB transaction, with repos bound to it. */
+  transaction: <T>(fn: (repos: BotRepos) => Promise<T>) => Promise<T>;
+  ownerTelegramId: string;
+  now: () => Date;
+  random?: () => number;
+  newInviteCode?: () => string;
+};
+
+export const INVITE_TTL_HOURS = 48;
+/** Telegram deep-link payloads allow [A-Za-z0-9_-], up to 64 characters. Our codes are 22 (16 random bytes). */
+const INVITE_CODE = /^[A-Za-z0-9_-]{16,64}$/;
+const START = /^\/start(?:@\w+)?(?:\s+(\S+))?\s*$/;
+
+class InviteRejected extends Error {}
+
+export function createBot(token: string, deps: BotDeps, botInfo?: UserFromGetMe): Bot<BotContext> {
+  const bot = new Bot<BotContext>(token, botInfo ? { botInfo } : {});
+  const { repos } = deps;
+  const newInviteCode = deps.newInviteCode ?? (() => randomBytes(16).toString('base64url'));
+  const app = new Composer<BotContext>();
+
+  // 1. Idempotency: Telegram retries an update until it gets a 2xx. Seen before → ack and stop.
+  app.use(async (ctx, next) => {
+    if (!(await repos.processedUpdates.markProcessed(BigInt(ctx.update.update_id)))) return;
+    await next();
+  });
+
+  // 2. Private chats only. In a group: one reply, then leave (BOT_SPEC §1).
+  app.use(async (ctx, next) => {
+    if (!ctx.chat) return;
+    if (ctx.chat.type !== 'private') {
+      if (ctx.callbackQuery) await ctx.answerCallbackQuery();
+      else if (ctx.message) {
+        await ctx.reply(copy.PRIVATE_CHAT_ONLY);
+        await ctx.leaveChat();
+      }
+      return;
+    }
+    await next();
+  });
+
+  // 3. Resolve the user. Strangers are handled here and never reach the rest.
+  app.use(async (ctx, next) => {
+    const from = ctx.from;
+    if (!from || from.is_bot) return;
+    const user = await repos.users.findByTelegramId(BigInt(from.id));
+    if (user?.status !== 'ACTIVE') {
+      await handleStranger(ctx, user !== null && user !== undefined);
+      return;
+    }
+    if (user.botBlocked) await repos.users.setBotBlocked(user.id, false); // they're talking to us again
+    ctx.user = user;
+    await next();
+  });
+
+  async function handleStranger(ctx: BotContext, exists: boolean) {
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    const from = ctx.from as NonNullable<BotContext['from']>;
+    const start = START.exec(ctx.message?.text ?? '');
+    if (start && !exists) {
+      const profile = {
+        telegramId: BigInt(from.id),
+        telegramUsername: from.username ?? null,
+        firstName: from.first_name,
+      };
+      if (String(from.id) === deps.ownerTelegramId) {
+        const owner = await deps.transaction(async (r) =>
+          (await r.users.ownerExists()) ? null : r.users.create({ ...profile, role: 'OWNER' }),
+        );
+        if (owner) {
+          await ctx.reply(copy.welcomeOwner(owner.firstName, deps.random));
+          return;
+        }
+      }
+      const code = start[1];
+      if (code !== undefined) {
+        const joined = INVITE_CODE.test(code) && (await redeemInvite(code, profile));
+        await ctx.reply(joined ? copy.welcomeInvited(from.first_name, deps.random) : copy.INVITE_INVALID);
+        return;
+      }
+    }
+    await ctx.reply(copy.PRIVATE_BOT);
+  }
+
+  /** Creates the user and uses up the invite in one transaction; any failure rolls both back. */
+  async function redeemInvite(code: string, profile: Omit<Parameters<BotRepos['users']['create']>[0], 'role'>) {
+    try {
+      await deps.transaction(async (r) => {
+        const user = await r.users.create({ ...profile, role: 'MEMBER' });
+        if (!(await r.invites.consume(sha256Hex(code), user.id, deps.now()))) throw new InviteRejected();
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof InviteRejected) return false;
+      throw err;
+    }
+  }
+
+  // 4. Rate limit: 20 messages per user per minute (SECURITY §5). Reply once when it trips, then stay quiet.
+  app.use(async (ctx, next) => {
+    const result = await hitRateLimit(repos.rateLimits, MESSAGES_PER_MINUTE, userOf(ctx).id, deps.now());
+    if (result.allowed) {
+      await next();
+      return;
+    }
+    if (ctx.callbackQuery) await ctx.answerCallbackQuery();
+    else if (result.justExceeded) await ctx.reply(copy.rateLimited(deps.random));
+  });
+
+  // 5. Handlers.
+  app.command('start', (ctx) => ctx.reply(copy.welcomeBack(userOf(ctx).firstName, deps.random)));
+  app.command(['help', 'bantuan'], (ctx) => ctx.reply(copy.HELP));
+
+  app.command('invite', async (ctx) => {
+    const user = userOf(ctx);
+    if (user.role !== 'OWNER') {
+      await ctx.reply(copy.INVITE_OWNER_ONLY);
+      return;
+    }
+    const code = newInviteCode();
+    const expiresAt = new Date(deps.now().getTime() + INVITE_TTL_HOURS * 3_600_000);
+    await repos.invites.create(user.id, { codeHash: sha256Hex(code), expiresAt });
+    await ctx.reply(copy.inviteCreated(`https://t.me/${ctx.me.username}?start=${code}`, INVITE_TTL_HOURS), {
+      link_preview_options: { is_disabled: true },
+    });
+  });
+
+  // BotFather's command list; implemented in later milestones.
+  app.command(['sisa', 'pemasukan', 'riwayat', 'undo', 'kategori', 'dashboard'], (ctx) => ctx.reply(copy.COMING_SOON));
+  app.on('message:entities:bot_command', (ctx) => ctx.reply(copy.HELP));
+  // TODO(M5): the NLP pipeline (log expense / income / saving, "mau X").
+  app.on('message:text', (ctx) => ctx.reply(copy.LOGGING_COMING_SOON));
+  app.on('callback_query', (ctx) => ctx.answerCallbackQuery());
+
+  // A user who blocked the bot can't be replied to. reportBlocked (telegram.ts) has marked them; don't fail
+  // the update (Telegram would retry it). Anything else propagates → 500 → logged.
+  bot.errorBoundary((err) => {
+    if (!isBlockedError(err.error)) throw err.error;
+  }, app);
+
+  return bot;
+}
+
+function userOf(ctx: BotContext): User {
+  if (!ctx.user) throw new Error('bot: handler reached without a resolved user');
+  return ctx.user;
+}

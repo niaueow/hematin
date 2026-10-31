@@ -24,9 +24,11 @@ export function detectIntent(text: string, amount: AmountResult = parseAmount(te
 
 /**
  * After categorizing: a plain log whose category is in the SAVINGS bucket is LOG_SAVING ("reksadana 200k"),
- * and one in the INCOME bucket is LOG_INCOME ("gaji 5jt"). Purchase checks and income stay as they are.
+ * and one in the INCOME bucket is LOG_INCOME ("gaji 5jt"). "mau nabung 200k" is a saving to record, not a
+ * purchase check (owner decision, BOT_SPEC §2.3a). Other purchase checks and income stay as they are.
  */
 export function refineIntent(intent: Intent, bucket: Bucket | null): Intent {
+  if (intent === 'ASK_PURCHASE' && bucket === 'SAVINGS') return 'LOG_SAVING';
   if (intent !== 'LOG_EXPENSE') return intent;
   if (bucket === 'SAVINGS') return 'LOG_SAVING';
   if (bucket === 'INCOME') return 'LOG_INCOME';

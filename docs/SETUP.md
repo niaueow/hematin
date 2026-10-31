@@ -38,11 +38,21 @@ PowerShell tip: `curl` is an alias for `Invoke-WebRequest`. Use **`curl.exe`** f
 
 1. Push to `main`. Vercel builds, tests, migrates, and deploys.
 2. Default categories are inserted by a **data migration** (`prisma/migrations/<ts>_seed_categories/migration.sql`, with `INSERT … ON CONFLICT DO NOTHING`), so they're applied by `migrate deploy` like any other migration. No manual seed step is needed. See DATA_MODEL "Seed".
-3. Set the webhook once:
-   ```bash
-   curl.exe -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook" -d "url=https://<your-app>.vercel.app/api/telegram/webhook" -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" -d "allowed_updates=[\"message\",\"callback_query\"]" -d "drop_pending_updates=true"
-   curl.exe "https://api.telegram.org/bot<BOT_TOKEN>/getWebhookInfo"
+3. Set the webhook once. In PowerShell, build the body as JSON so the `allowed_updates` array survives quoting:
+   ```powershell
+   $token  = "<TELEGRAM_BOT_TOKEN>"
+   $body = @{
+     url                  = "<APP_URL>/api/telegram/webhook"
+     secret_token         = "<TELEGRAM_WEBHOOK_SECRET>"
+     allowed_updates      = @("message", "callback_query")
+     drop_pending_updates = $true
+   } | ConvertTo-Json
+   Invoke-RestMethod -Method Post -Uri "https://api.telegram.org/bot$token/setWebhook" -ContentType "application/json" -Body $body
+   Invoke-RestMethod "https://api.telegram.org/bot$token/getWebhookInfo"
    ```
+   - Expect `ok = True` / `Webhook was set`. `getWebhookInfo` should show the URL, `allowed_updates` = message, callback_query, and no `last_error_message`.
+   - Use the same values as in Vercel: `<APP_URL>` has no trailing slash, and the secret is 32+ characters of `[A-Za-z0-9_-]`. A wrong secret makes every update fail with 401.
+   - Paste the token only in your own terminal. It's never needed in the repo or in chat.
 4. Send `/start` to your bot. Because your Telegram ID equals `OWNER_TELEGRAM_ID`, you're created as **OWNER** automatically. Everyone else needs an invite from `/invite`.
 5. Set the bot's **menu button** to open the Mini App at `https://<your-app>.vercel.app/` (BotFather → your bot → Bot Settings → Menu Button, or the `setChatMenuButton` API).
 6. Set commands with BotFather `/setcommands`:
@@ -55,10 +65,11 @@ PowerShell tip: `curl` is an alias for `Invoke-WebRequest`. Use **`curl.exe`** f
    dashboard - Buka dashboard
    bantuan - Cara pakai
    ```
-7. Check that **Vercel → Settings → Cron Jobs** shows all three jobs (daily reminder, weekly recap, monthly income reminder). Trigger one manually to test it:
-   ```bash
-   curl.exe -H "Authorization: Bearer <CRON_SECRET>" https://<your-app>.vercel.app/api/cron/daily-reminder
+7. Check that **Vercel → Settings → Cron Jobs** shows all three jobs (daily reminder, weekly recap, monthly income reminder). To check the cron auth, call one manually: without the header → 401; with it → 501 until the daily reminder is built.
+   ```powershell
+   curl.exe -H "Authorization: Bearer <CRON_SECRET>" <APP_URL>/api/cron/daily-reminder
    ```
+   Don't trigger `/api/cron/income-reminder` by hand unless you mean to: it really sends, and it uses up that month's single run.
 
 ## 5. Every deploy after that
 

@@ -28,7 +28,7 @@ Threat model in one line: **a handful of known users storing personal financial 
 Webhook extras:
 - Idempotency via `ProcessedUpdate.updateId` (Telegram retries on failure).
 - Ignore updates from non-private chats.
-- Unknown Telegram users get at most one canned reply. **No DB writes except the invite flow and the one-time owner bootstrap (`from.id == OWNER_TELEGRAM_ID` and no OWNER exists yet), and no Groq calls.**
+- Unknown Telegram users get at most one canned reply **per message** (counting replies would need a DB write). They aren't rate-limited, for the same reason. **No DB writes except the invite flow and the one-time owner bootstrap (`from.id == OWNER_TELEGRAM_ID` and no OWNER exists yet), and no Groq calls.**
 
 ## 3. Dashboard authentication (no passwords)
 

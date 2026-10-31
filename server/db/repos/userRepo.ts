@@ -38,6 +38,11 @@ export function createUserRepo(db: Db) {
       await db.user.updateMany({ where: { id: userId }, data: { botBlocked } });
     },
 
+    /** From a Telegram 403 on outbound messages, where only the chat id (= Telegram user id) is known. */
+    async setBotBlockedByTelegramId(telegramId: bigint, botBlocked: boolean) {
+      await db.user.updateMany({ where: { telegramId }, data: { botBlocked } });
+    },
+
     async setStatus(userId: string, status: UserStatus) {
       await db.user.updateMany({ where: { id: userId }, data: { status } });
     },

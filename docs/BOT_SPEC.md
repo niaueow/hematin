@@ -19,6 +19,14 @@ Also set the bot's **menu button** to open the Mini App (`📊 Dashboard`).
 
 The bot only works in **private chats**. In groups it replies once, "pakai di chat pribadi ya", then leaves.
 
+Implementation notes (M4):
+- **Strangers** (unknown or DISABLED users) get the canned reply to every message. Their button presses are only acknowledged.
+- **`/start <code>`** from someone already registered is a normal welcome back; the invite stays unused. An invalid, used or expired code gets `INVITE_INVALID`.
+- **Owner bootstrap** happens only on `/start`, and only while no OWNER exists.
+- **Commands from the BotFather list** that later milestones build (`/sisa`, `/pemasukan`, `/riwayat`, `/undo`, `/kategori`, `/dashboard`) reply "lagi disiapin". Unknown commands get the help. Plain text gets a placeholder until logging (M5).
+- **Rate limit:** the 21st message within a minute gets one warning; later ones in that minute are ignored.
+- **Blocked bot:** a user who blocked the bot is marked `botBlocked` on the 403, and unmarked the next time they write.
+
 ## 2. Message pipeline
 
 ```
@@ -79,6 +87,10 @@ How the rules above are applied where they left room. Covered by `tests/nlp/*.te
 - **Prefixes and suffixes.** `rp`, `rp.` and `idr` mark money but not size: `rp 20` is still AMBIGUOUS_SMALL. A unit may carry `-an` ("sekitar"): `50rb-an` → 50.000.
 - **Units and slang** are small tables in `nlp/amount.ts` (`UNITS`, `SLANG`). The slang values are exactly as listed in §2.1.
 - **Intent.** Triggers match as whole words, anywhere in the message, checked in order: purchase, then income. Then LOG_EXPENSE if any amount was found (even one that needs confirmation), else UNKNOWN. After categorizing, a LOG_EXPENSE in a SAVINGS category becomes LOG_SAVING, and one in an INCOME category becomes LOG_INCOME (`gaji 5jt`).
+- **Owner decisions (2026-10-31).**
+  - Slang stays as listed (gocap = 50.000, cepek = 100.000).
+  - Income with no matching category (`gajian 3jt`, `transfer dari papa 1jt`) is recorded as income with no category.
+  - `mau nabung 200k` (ASK_PURCHASE + SAVINGS category) records a saving: it's LOG_SAVING, with no verdict.
 - **Categorize only looks at buckets that fit the intent:** LOG_INCOME → INCOME; ASK_PURCHASE → NEEDS/WANTS/SAVINGS; otherwise all. Keywords and aliases match as whole words (`grab` ≠ `grabfood`, `kopi` ≠ `ngopi`), longest first. Aliases only count if they point at a category the user can use.
 - **No amount.** `detectIntent` returns UNKNOWN when there's no trigger and no amount (`warteg`). The bot replies "Berapa duitnya?" when a category matched, and the short help otherwise.
 - **Item** (note + alias key) = the message minus the amount, punctuation and filler words (`FILLER_WORDS` in `nlp/categorize.ts`). The words of the matched keyword are kept (`dapet uang jajan 2jt` → "uang jajan"). If only fillers are left, they're kept (`jajan 10k` → "jajan"). Max 120 characters.

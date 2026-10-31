@@ -59,6 +59,7 @@ const rows: Row[] = [
   // savings
   ['nabung 500k', 500_000, 'LOG_SAVING', 'nabung', 'nabung'],
   ['beli emas 1jt', 1_000_000, 'LOG_SAVING', 'nabung', 'emas'],
+  ['mau nabung 200k', 200_000, 'LOG_SAVING', 'nabung', 'nabung'], // not a purchase check (owner decision)
   // income
   ['uang saku 1,5jt', 1_500_000, 'LOG_INCOME', 'uang-jajan', 'uang saku'],
   ['dikasih mama 500rb', 500_000, 'LOG_INCOME', 'uang-jajan', 'dikasih mama'], // matched keyword kept in the note

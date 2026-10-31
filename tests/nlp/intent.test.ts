@@ -35,7 +35,8 @@ describe('refineIntent: LOG_SAVING / LOG_INCOME follow the category', () => {
     ['LOG_EXPENSE', 'INCOME', 'LOG_INCOME'],
     ['LOG_EXPENSE', 'WANTS', 'LOG_EXPENSE'],
     ['LOG_EXPENSE', null, 'LOG_EXPENSE'],
-    ['ASK_PURCHASE', 'SAVINGS', 'ASK_PURCHASE'],
+    ['ASK_PURCHASE', 'SAVINGS', 'LOG_SAVING'], // "mau nabung 200k" records a saving
+    ['ASK_PURCHASE', 'WANTS', 'ASK_PURCHASE'],
     ['LOG_INCOME', 'INCOME', 'LOG_INCOME'],
     ['UNKNOWN', 'NEEDS', 'UNKNOWN'],
   ] as const)('%s + %s → %s', (intent, bucket, expected) => {

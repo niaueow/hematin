@@ -1,20 +1,18 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import { AppError } from './errors.js';
+import { constantTimeEquals } from './secrets.js';
 
-// Vercel Cron sends `Authorization: Bearer ${CRON_SECRET}` (ARCHITECTURE §3.3). Compared in constant
-// time (AGENTS.md rule 12); hashing first gives timingSafeEqual equal-length inputs.
+// Vercel Cron sends `Authorization: Bearer ${CRON_SECRET}` (ARCHITECTURE §3.3); the Telegram webhook sends
+// `X-Telegram-Bot-Api-Secret-Token` (SECURITY §2). Both are compared in constant time (AGENTS.md rule 12).
 
-const digest = (value: string) => createHash('sha256').update(value).digest();
-
-export function requireCronSecret(secret: string): RequestHandler {
-  const expected = digest(`Bearer ${secret}`);
+export function requireHeaderSecret(header: string, expected: string): RequestHandler {
   return (req, _res, next) => {
-    const given = digest(req.get('authorization') ?? '');
-    if (!timingSafeEqual(given, expected)) {
+    if (!constantTimeEquals(req.get(header) ?? '', expected)) {
       next(new AppError('UNAUTHORIZED', 401, 'Unauthorized'));
       return;
     }
     next();
   };
 }
+
+export const requireCronSecret = (secret: string) => requireHeaderSecret('authorization', `Bearer ${secret}`);

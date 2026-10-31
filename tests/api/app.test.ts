@@ -7,9 +7,15 @@ const errorCode = (res: request.Response) => (res.body as ErrorBody).error.code;
 
 const CRON_SECRET = 'c'.repeat(32);
 const incomeReminder = vi.fn(() => Promise.resolve({ sent: 1 }));
+const WEBHOOK_SECRET = 'w'.repeat(32);
+const handleUpdate = vi.fn(() => Promise.resolve());
 
 describe('Express app', () => {
-  const app = createApp({ version: 'test123', cron: { secret: CRON_SECRET, incomeReminder } });
+  const app = createApp({
+    version: 'test123',
+    cron: { secret: CRON_SECRET, incomeReminder },
+    telegram: { webhookSecret: WEBHOOK_SECRET, handleUpdate },
+  });
 
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -92,5 +98,47 @@ describe('Express app', () => {
     const output = log.mock.calls.flat().join('\n');
     expect(output).toContain('"path":"/api/health"');
     expect(output).not.toContain('supersecret');
+  });
+
+  describe('POST /api/telegram/webhook (SECURITY §2)', () => {
+    const update = {
+      update_id: 1001,
+      message: { message_id: 1, date: 0, chat: { id: 1, type: 'private' }, text: 'halo' },
+    };
+    const post = () => request(app).post('/api/telegram/webhook').set('content-type', 'application/json');
+
+    it.each([
+      ['missing', undefined],
+      ['wrong', 'x'.repeat(32)],
+      ['almost right', `${WEBHOOK_SECRET}x`],
+    ])('%s secret header → 401 and the update is never handled', async (_name, header) => {
+      handleUpdate.mockClear();
+      const req = post();
+      const res = await (header === undefined ? req : req.set('x-telegram-bot-api-secret-token', header)).send(update);
+      expect(res.status).toBe(401);
+      expect(errorCode(res)).toBe('UNAUTHORIZED');
+      expect(handleUpdate).not.toHaveBeenCalled();
+    });
+
+    it('correct secret → the update is handled before the 200', async () => {
+      handleUpdate.mockClear();
+      const res = await post().set('x-telegram-bot-api-secret-token', WEBHOOK_SECRET).send(update);
+      expect(res.status).toBe(200);
+      expect(handleUpdate).toHaveBeenCalledWith(update);
+    });
+
+    it('a body that is not an update → 400', async () => {
+      handleUpdate.mockClear();
+      const res = await post().set('x-telegram-bot-api-secret-token', WEBHOOK_SECRET).send({ hello: 1 });
+      expect(res.status).toBe(400);
+      expect(handleUpdate).not.toHaveBeenCalled();
+    });
+
+    it('a failing handler → 500 (Telegram retries; idempotency drops the duplicate)', async () => {
+      handleUpdate.mockRejectedValueOnce(new Error('db down'));
+      const res = await post().set('x-telegram-bot-api-secret-token', WEBHOOK_SECRET).send(update);
+      expect(res.status).toBe(500);
+      expect(errorCode(res)).toBe('INTERNAL');
+    });
   });
 });
