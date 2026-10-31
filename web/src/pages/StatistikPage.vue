@@ -169,6 +169,15 @@ const hasBuckets = computed(() => (summary.value?.byBucket ?? []).some((b) => b.
           <div class="chart chart--bar">
             <Bar :data="spendData" :options="spendOptions" aria-label="Grafik pengeluaran per waktu" role="img" />
           </div>
+          <table class="visually-hidden">
+            <caption>
+              Pengeluaran per waktu
+            </caption>
+            <tr v-for="(label, i) in spendData.labels" :key="label">
+              <th scope="row">{{ label }}</th>
+              <td>{{ formatRupiah(spendData.datasets[0]?.data[i] ?? 0) }}</td>
+            </tr>
+          </table>
         </section>
 
         <section class="card chart-card" aria-labelledby="bucket-title">
@@ -176,6 +185,15 @@ const hasBuckets = computed(() => (summary.value?.byBucket ?? []).some((b) => b.
           <div v-if="hasBuckets" class="chart chart--doughnut">
             <Doughnut :data="bucketData" :options="bucketOptions" aria-label="Grafik pengeluaran per pos" role="img" />
           </div>
+          <table v-if="hasBuckets" class="visually-hidden">
+            <caption>
+              Per pos
+            </caption>
+            <tr v-for="b in summary.byBucket" :key="b.bucket">
+              <th scope="row">{{ BUCKET_LABEL[b.bucket] }}</th>
+              <td>{{ formatRupiah(b.amount) }}</td>
+            </tr>
+          </table>
           <EmptyState v-else title="Belum ada pengeluaran" />
         </section>
 
@@ -189,6 +207,15 @@ const hasBuckets = computed(() => (summary.value?.byBucket ?? []).some((b) => b.
               role="img"
             />
           </div>
+          <table v-if="categories.length" class="visually-hidden">
+            <caption>
+              Per kategori
+            </caption>
+            <tr v-for="c in categories" :key="c.categoryId ?? 'none'">
+              <th scope="row">{{ c.name ?? 'Tanpa kategori' }}</th>
+              <td>{{ formatRupiah(c.amount) }}</td>
+            </tr>
+          </table>
           <EmptyState v-else title="Belum ada pengeluaran" />
         </section>
 

@@ -52,12 +52,19 @@ Browser / Mini App ──►│  /api/*  ─────────────
 │  ├─ jobs/                 # dailyReminder.ts (+ housekeeping.ts), weeklyRecap.ts, monthlyIncomeReminder.ts, deliver.ts
 │  └─ lib/                  # money formatting, errors, rate limit, logger
 ├─ web/                     # Vue 3 + Vite SPA (Phase 2)
-│  ├─ src/{pages,components,stores,api}/
-│  └─ index.html
+│  ├─ src/pages/            # Home, Transaksi, Statistik, Profil (inside AppShell); Auth, SignIn; Playground (OWNER)
+│  ├─ src/components/       # DESIGN.md components (App*, nav, feedback, §4.7 dashboard pieces)
+│  ├─ src/composables/      # useToast, useModal, useTelegramBack, useStoredFlag, useTransactionList
+│  ├─ src/lib/              # format.ts (money + WIB dates), tones, charts (Chart.js + token colours), page logic
+│  ├─ src/api/              # client.ts (tma header / cookie + CSRF header), dashboard.ts (typed endpoints)
+│  ├─ src/styles/           # tokens.css (generated from Figma), tokens.fixes.css, typography.css, base.css
+│  ├─ src/{router,session,telegram,theme,nav}.ts
+│  └─ index.html            # Plus Jakarta Sans, telegram-web-app.js, no inline script
 ├─ prisma/
 │  ├─ schema.prisma
 │  └─ migrations/           # schema migrations + SQL data migration seeding default categories
-├─ tests/                   # vitest: unit (budget, nlp) + integration (routes, auth)
+├─ tests/                   # vitest: budget, nlp, bot (real grammY + in-memory repos), api (supertest), auth, jobs, db, web (Vue Test Utils + happy-dom)
+├─ scripts/                 # tokens-from-figma.mjs (npm run tokens)
 ├─ docs/
 ├─ vercel.json
 ├─ AGENTS.md  CLAUDE.md  PRD.md  README.md  .env.example
@@ -145,3 +152,11 @@ Safeguards that replace a staging environment:
 - Instant code rollback via "Promote to Production" on an earlier deployment.
 - Preview deployments have no env vars, so they can't touch real data. `server/env.ts` fails fast there.
 - Unit tests never need a database. Route/auth tests mock the repository layer.
+
+## 8. The web app (as built, M10–M15)
+
+- **Pages load lazily** (route-level `import()`). The first load is the entry (~44 KB) + the Vue runtime (~64 KB) + CSS (~12 KB), uncompressed. Chart.js and vue-chartjs are only in the Statistik chunk (~176 KB). Each Lucide icon is its own small chunk (imported per icon, tree-shaken). Checked with `vite build` in M15.
+- **Auth:** inside Telegram every API call carries `Authorization: tma <initData>`; in a browser the `__Host-session` cookie (SECURITY §3). The router guard loads `/api/me` once and sends anyone without a user to `/masuk`.
+- **Data:** pages call the API directly (`web/src/api/dashboard.ts`) and keep no store; budget numbers come only from `/api/budget/current`, so the dashboard and `/sisa` can't disagree.
+- **Layout:** `AppShell` = sidebar ≥ 1024px, bottom navbar below, `ToastHost`; a skip link and per-page titles for keyboard and screen-reader users.
+- **Theme:** light only for now (no dark tokens in the Figma export; `DARK_MODE_READY` in `web/src/theme.ts`).

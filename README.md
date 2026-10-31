@@ -6,12 +6,12 @@ Telegram bot for tracking pocket money with a built-in 50/30/20 budget that nudg
 - Unknown items: Groq guesses the category, or you pick it once and the bot remembers
 - Every log has [✏️ Ganti kategori] [↩️ Undo]
 - Ask before buying: `mau donat 35k` → "Gas!" / "Hmm mepet…" / "Waduh…" with [Jadi beli] [Ga jadi]
-- `/sisa`, `/riwayat`, `/undo`, `/kategori`, `/pemasukan`
+- `/sisa`, `/riwayat`, `/undo`, `/kategori`, `/pemasukan`, `/dashboard`
 - Reminder at ~21:00 WIB if you haven't logged anything, recap every Sunday ~22:00 WIB, income reminder on the 1st
 - Invite-only (`/invite`, owner only)
-- Phase 2: dashboard with charts (week/month/year) + full CRUD, inside Telegram or in the browser, no password. Sign-in is built (`/dashboard`, the 📊 menu button); the charts and CRUD aren't yet
+- **Dashboard** (Vue + Chart.js), inside Telegram (📊 menu button) or in a browser (`/dashboard` sends a one-time link), no password: Home (the `/sisa` numbers), Transaksi (filter, add, edit, delete with undo), Statistik (week / month / year charts), Profil (categories, learned keywords, sign out)
 
-**Status:** Phase 1 (the bot) is built and reviewed (M0–M9). Phase 2 has started: dashboard sign-in (Mini App + `/dashboard` magic link, M10), the dashboard API (budget, summary, transactions, categories, M11), the design-system base (tokens, type, Button/Input/Chip, `/playground`, M12) and the app shell with navigation and feedback components (M13), and the dashboard pages (Home, Transaksi, Statistik, Profil, M14) are built. Next: use it, then polish against Figma.
+**Status:** Phase 1 (the bot, M0–M9) and Phase 2 (the dashboard, M10–M14) are built; M15 was the final review (DECISIONS D-033). Next: use it daily, then polish against Figma and decide the open design items in DESIGN.md §1 "M15 review" (contrast, dark mode).
 
 **Stack:** Vue 3 · Express · Prisma · Neon Postgres · grammY · Groq · Vercel
 
@@ -42,7 +42,7 @@ There's no local environment (D-021). Before pushing:
 npm run typecheck && npm run lint && npm test
 ```
 
-Tests need no database or secrets. The Vercel build runs `prisma generate`, the tests, `prisma migrate deploy`, then `vite build`; a failing test cancels the deploy.
+Tests need no database or secrets. `npm run lint` is ESLint + stylelint (no raw colours in `.vue`); `npm run tokens` regenerates `web/src/styles/tokens.css` from a Figma JSON export in `figma-token/`. The Vercel build runs `prisma generate`, the tests, `prisma migrate deploy`, then `vite build`; a failing test cancels the deploy.
 
 ## Build order
 
@@ -52,5 +52,7 @@ Tests need no database or secrets. The Vercel build runs `prisma generate`, the 
 4. ✅ Bot: invite flow → logging → `/sisa` → "mau X" → undo / ganti kategori
 5. ✅ Groq fallback + learned aliases
 6. ✅ Cron: daily reminder + weekly recap
-7. Deploy Phase 1, use it for 2 weeks, tweak copy ← next
-8. Phase 2: auth (initData + magic link) → API → Vue dashboard → charts → CRUD
+7. ✅ Phase 1 reviewed (M9)
+8. ✅ Phase 2: auth (initData + magic link) → API → design system → shell → dashboard pages (M10–M14)
+9. ✅ Final review (M15)
+10. Use it daily, tweak copy, polish against Figma ← next

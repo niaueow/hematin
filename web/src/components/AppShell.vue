@@ -47,10 +47,11 @@ async function onLogout() {
 
 <template>
   <div class="app-shell">
+    <a href="#main" class="app-shell__skip text-body-3-bold">Lewati ke konten</a>
     <aside class="app-shell__side">
       <SideNav v-model:collapsed="collapsed" :user="user" :can-logout="!inMiniApp" @logout="onLogout" />
     </aside>
-    <main class="app-shell__main">
+    <main id="main" class="app-shell__main" tabindex="-1">
       <RouterView />
     </main>
     <div class="app-shell__bottom">
@@ -71,6 +72,23 @@ async function onLogout() {
 }
 
 /* Mobile: the content clears the fixed bottom navbar. */
+.app-shell__skip {
+  position: absolute;
+  z-index: 70;
+  top: var(--space-spacing-8);
+  left: var(--space-spacing-8);
+  padding: var(--space-spacing-8) var(--space-spacing-12);
+  border-radius: var(--radius-8);
+  background: var(--background-light);
+  color: var(--content-brand-active);
+  transform: translateY(-200%);
+}
+
+/* Keyboard users get a skip link past the navigation (visible only when focused). */
+.app-shell__skip:focus {
+  transform: none;
+}
+
 .app-shell__main {
   min-width: 0;
   padding-bottom: calc(var(--app-bottom-nav-height) + var(--app-safe-bottom));
@@ -82,6 +100,10 @@ async function onLogout() {
   right: 0;
   bottom: 0;
   left: 0;
+}
+
+.app-shell__main:focus {
+  outline: none;
 }
 
 @media (min-width: 1024px) {

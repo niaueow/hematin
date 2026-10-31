@@ -45,6 +45,32 @@ Files:
 - **Fonts:** Plus Jakarta Sans 400/500/600/800 from Google Fonts (`web/index.html`), allowed by the CSP in `vercel.json` (SECURITY §6). Text styles: `web/src/styles/typography.css`; base rules: `base.css`; motion tokens `--motion-color` (150ms) and `--motion-enter` (200ms).
 - **The colour lint:** `npm run lint` also runs stylelint (`stylelint.config.mjs`): no hex, `rgb()`/`hsl()`/…, or named colours in `.vue` files or `web/src/styles`, except the two token files.
 
+### M15 review: contrast and dark mode (open design items)
+
+**Contrast** (WCAG 2.2 AA: 4.5:1 for text, 3:1 for UI parts), measured on the light tokens. These pass and are guarded by `tests/web/review.test.ts`: body and card text (12.4–12.7), primary button (6.4 / hover 7.3), links (6.4), the info chip (5.6), the active nav item (6.5), the focus ring (7.3), the filled input border (7.5).
+
+These don't pass. They're Figma's palette, so changing them is a design decision:
+
+| Pair | Ratio | Where | Shade that would pass |
+|---|---|---|---|
+| `--content-system-default-positive` on its subtle bg / on white | 2.09 / 2.22 | positive chips, toasts' icon, income amounts | positive-800 (5.98 / 6.35) |
+| `--content-system-default-warning` on its subtle bg | 1.99 | warning chips (Jajan) | warning-800 (5.72) |
+| `--content-system-default-negative` on its subtle bg / on white | 3.29 / 3.67 | negative chips, error text | negative-700 (5.79 / 6.45) |
+| white on `--background-system-default-negative` (hover) | 3.67 (4.35) | danger button | negative-700 background (6.45) |
+| `--content-gray` on white / page / `--background-hover` | 4.49 / 4.38 / 4.08 | secondary text, neutral chips | neutral-600 (5.27 / 5.14 / 4.79) |
+| `--content-default` on white | 3.07 | placeholders, helper text | neutral-600 (5.27) |
+| `--stroke-primary` on white (UI 3:1) | 1.10 | the empty input's border | neutral-500 (4.49) |
+
+Fix it in Figma (semantic token → a darker primitive), re-export, `npm run tokens`. Nothing in the components needs to change.
+
+**Dark mode:** not available yet. The export has no dark semantics, and switching `data-semantic-mode` without them gave a mixed page (native controls and the danger hover went dark on a light page). So `web/src/theme.ts` keeps the app light (`DARK_MODE_READY = false`). To turn it on: export the dark collection, generate a `[data-semantic-mode='dark']` block, set the flag. Charts already re-read their colours from the tokens.
+
+**Differences from Figma that remain** (checked against this file; the pixel comparison with PerfectPixel is the owner's):
+- Expected: font anti-aliasing (browser vs Figma); chart text drawn on `<canvas>` (Chart.js renders its own text; same family and colour tokens, slightly different hinting).
+- By decision: the sidebar logo mark "H" (not "N"); the profile subtitle is the Telegram @username (not an e-mail); the active BottomNav icon is Lucide with `fill` (no official filled set); inputs get a 2px focus outline on top of the focus border (§3 rule 6); toasts and the dialog have no shadow (no shadow tokens in the export).
+- Not in Figma yet (🆕): Button `secondary` / `danger` / `loading`, the §4.5 feedback components, and the §4.7 dashboard pieces. They're built from the existing tokens and on `/playground`.
+- Figma uses fixed widths (input 250px, sidebar 800px tall); code fills the container / the viewport (§3 rule 2).
+
 ## 2. Typography
 
 Font: **Plus Jakarta Sans**. Line height `normal` everywhere (matches Figma "Auto").
@@ -464,3 +490,7 @@ All money and date text comes from `web/src/lib/format.ts` (WIB, using `server/b
 | 11 | New button variants | `secondary`, `danger` (+ `loading` prop), needed by dialogs; add to Figma later |
 | 12 | Loading button | Keeps its variant colours (not the disabled look), sets `aria-busy`, ignores clicks (M12) |
 | 13 | AmountInput | Shows `Rp35.000` in the field itself and emits an integer or `null`; digits only (no "jt"/"rb" parsing), at most 12 digits (M12) |
+| 14 | Logo mark | "H" for Hematin (M13) |
+| 15 | Dark mode | Off until a dark token export exists (M15) |
+| 16 | Contrast | The AA failures in §1 "M15 review" are open: fix in Figma, re-export (M15) |
+| 17 | Skip link | "Lewati ke konten" before the navigation, visible on focus (M15) |
