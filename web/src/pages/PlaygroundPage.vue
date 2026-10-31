@@ -20,6 +20,12 @@ import AppInput from '@web/components/AppInput.vue';
 import AppAlert from '@web/components/AppAlert.vue';
 import AppSkeleton from '@web/components/AppSkeleton.vue';
 import AppToast from '@web/components/AppToast.vue';
+import AppSheet from '@web/components/AppSheet.vue';
+import BudgetMeter from '@web/components/BudgetMeter.vue';
+import ChipButton from '@web/components/ChipButton.vue';
+import SegmentedControl from '@web/components/SegmentedControl.vue';
+import TxRow from '@web/components/TxRow.vue';
+import type { Transaction } from '@web/api/dashboard';
 import BottomNav from '@web/components/BottomNav.vue';
 import ConfirmDialog from '@web/components/ConfirmDialog.vue';
 import EmptyState from '@web/components/EmptyState.vue';
@@ -41,6 +47,32 @@ const tones: Tone[] = ['positive', 'warning', 'negative', 'info', 'neutral'];
 const amount = ref<number | null>(35_000);
 const note = ref('');
 const toast = useToast();
+const segment = ref<'week' | 'month' | 'year'>('month');
+const chipPressed = ref(true);
+const sheetOpen = ref(false);
+const demoTx = (
+  type: Transaction['type'],
+  amount: number,
+  bucket: 'NEEDS' | 'WANTS' | 'SAVINGS' | 'INCOME',
+  note: string | null,
+): Transaction => ({
+  id: `${type}-${bucket}`,
+  type,
+  amount,
+  categoryId: bucket,
+  category: {
+    id: bucket,
+    name: { NEEDS: 'Makan', WANTS: 'Jajan', SAVINGS: 'Nabung', INCOME: 'Uang Jajan' }[bucket],
+    bucket,
+    emoji: null,
+  },
+  note,
+  date: '2026-11-11',
+  occurredAt: '2026-11-11T05:00:00.000Z',
+  source: 'BOT',
+  parseMethod: 'RULE',
+  createdAt: '2026-11-11T05:00:00.000Z',
+});
 const sideCollapsed = ref(false);
 const dialog = ref<'danger' | 'default' | 'loading' | null>(null);
 const showAlert = ref(true);
@@ -147,6 +179,44 @@ const forced = (state: string) => (['hover', 'pressed', 'focus'].includes(state)
         <AppChip tone="warning" :leading-icon="TriangleAlert">Jajan</AppChip>
         <AppChip tone="info" :leading-icon="CircleCheck">Pokok</AppChip>
       </div>
+    </section>
+
+    <section class="block">
+      <h2 class="text-body-1-bold">Dashboard pieces (M14) 🆕</h2>
+      <div class="row">
+        <SegmentedControl
+          v-model="segment"
+          :options="[
+            { value: 'week', label: 'Minggu' },
+            { value: 'month', label: 'Bulan' },
+            { value: 'year', label: 'Tahun' },
+          ]"
+          label="Periode"
+        />
+        <ChipButton :pressed="chipPressed" @click="chipPressed = !chipPressed">Pressed: {{ chipPressed }}</ChipButton>
+        <ChipButton>Not pressed</ChipButton>
+        <AppButton variant="secondary" size="small" @click="sheetOpen = true">Open AppSheet</AppButton>
+      </div>
+      <div class="column">
+        <BudgetMeter label="Jajan (info → warning tone)" :value="50000" :max="110000" tone="warning" />
+        <BudgetMeter label="Pokok" :value="30000" :max="499999" tone="info" />
+        <BudgetMeter label="Over budget" :value="150000" :max="110000" tone="warning" />
+        <BudgetMeter label="Tabungan" :value="5000" :max="400000" tone="positive" value-label="1% dari Rp400.000" />
+      </div>
+      <div class="column">
+        <TxRow :tx="demoTx('EXPENSE', 10000, 'NEEDS', 'warteg')" editable />
+        <TxRow :tx="demoTx('EXPENSE', 35000, 'WANTS', 'donat kentang yang namanya panjang sekali banget')" editable />
+        <TxRow :tx="demoTx('SAVING', 200000, 'SAVINGS', null)" />
+        <TxRow :tx="demoTx('INCOME', 2000000, 'INCOME', 'uang jajan')" />
+      </div>
+      <AppSheet v-model:open="sheetOpen" title="Tambah transaksi">
+        <AppInput label="Catatan" placeholder="cireng, gojek…" />
+        <AmountInput label="Nominal" />
+        <template #footer>
+          <AppButton variant="secondary" @click="sheetOpen = false">Batal</AppButton>
+          <AppButton @click="sheetOpen = false">Simpan</AppButton>
+        </template>
+      </AppSheet>
     </section>
 
     <section class="block">

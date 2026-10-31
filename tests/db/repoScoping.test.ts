@@ -124,6 +124,7 @@ scopingSuite('txRepo', createTxRepo, [
   ['existsOnDate', (r) => r.existsOnDate(USER, day)],
   ['update', (r) => r.update(USER, 'tx_1', { amount: 5_000, occurredAt: now })],
   ['softDelete', (r) => r.softDelete(USER, 'tx_1', now)],
+  ['restore', (r) => r.restore(USER, 'tx_1')],
 ]);
 
 scopingSuite(

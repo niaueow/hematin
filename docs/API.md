@@ -64,6 +64,7 @@ As built (M11, `server/budget/summary.ts`, pure): `date` defaults to today (WIB)
 | POST | `/api/transactions` | `{ type, amount, categoryId?, note?, date }` → `source=WEB`, `parseMethod=MANUAL` |
 | PATCH | `/api/transactions/:id` | Partial update; same validation |
 | DELETE | `/api/transactions/:id` | Soft delete |
+| POST | `/api/transactions/:id/restore` | Undo a soft delete (M14, the dashboard's "Urungkan"). Returns the transaction. 404 unless it's yours and deleted |
 
 Zod schema (create):
 ```ts

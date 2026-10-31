@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue';
 import AppInput from '@web/components/AppInput.vue';
-import { formatRupiah, parseRupiah } from '@web/lib/money';
+import { formatRupiah, parseRupiah } from '@web/lib/format';
 
 // DESIGN.md §4.2: AppInput + Rp formatting, emitting an integer number of rupiah (AGENTS.md rule 1), or null when
 // empty. It looks exactly like AppInput. Only the digits count ("Rp 1.500.000" → 1500000); units like "jt" are

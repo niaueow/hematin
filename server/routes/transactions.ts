@@ -180,5 +180,15 @@ export function transactionsRouter(deps: DashboardDeps): Router {
     res.json({ ok: true });
   });
 
+  // Undo a delete ("Urungkan" in the dashboard's toast). 404 unless it's yours and deleted.
+  router.post('/:id/restore', async (req, res) => {
+    const userId = authOf(req).user.id;
+    const id = pathId(req.params.id);
+    if (!(await transactions.restore(userId, id))) throw notFound();
+    const tx = await transactions.findById(userId, id);
+    if (!tx) throw notFound();
+    res.json(txView(tx));
+  });
+
   return router;
 }

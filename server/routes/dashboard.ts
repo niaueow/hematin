@@ -18,7 +18,10 @@ export type DashboardDeps = {
   appUrl: string;
   budget: Pick<BudgetService, 'current'>;
   repos: {
-    transactions: Pick<TxRepo, 'create' | 'findById' | 'update' | 'softDelete' | 'listForUser' | 'listInRange'>;
+    transactions: Pick<
+      TxRepo,
+      'create' | 'findById' | 'update' | 'softDelete' | 'restore' | 'listForUser' | 'listInRange'
+    >;
     categories: Pick<CategoryRepo, 'listUsable' | 'findUsableById' | 'findOwnById' | 'createOwn' | 'updateOwn'>;
     aliases: Pick<AliasRepo, 'listForUser' | 'deleteOwn'>;
   };

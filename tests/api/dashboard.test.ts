@@ -358,6 +358,17 @@ describe('GET / PATCH / DELETE /api/transactions/:id', () => {
     expect((await world.A.delete(`/api/transactions/${world.id}`)).status).toBe(404);
   });
 
+  it('POST /:id/restore undoes a delete (once); a live one → 404', async () => {
+    const world = await withExpense();
+    expect((await world.A.post(`/api/transactions/${world.id}/restore`, {})).status).toBe(404); // not deleted
+    await world.A.delete(`/api/transactions/${world.id}`);
+    const restored = await world.A.post(`/api/transactions/${world.id}/restore`, {});
+    expect(restored.status).toBe(200);
+    expect(restored.body).toMatchObject({ id: world.id, amount: 25_000 });
+    expect(world.db.txs.at(-1)?.deletedAt).toBeNull();
+    expect((await world.A.post(`/api/transactions/${world.id}/restore`, {})).status).toBe(404);
+  });
+
   it.each(['/api/transactions/nope', '/api/transactions/a%20b'])(
     'an unknown or malformed id (%s) → 404',
     async (path) => {
@@ -521,6 +532,10 @@ describe('cross-user: another user’s ids are always 404 (SECURITY §3.3)', () 
     [
       'DELETE a transaction',
       (w: Awaited<ReturnType<typeof aHasEverything>>) => w.B.delete(`/api/transactions/${w.txId}`),
+    ],
+    [
+      'restore a transaction',
+      (w: Awaited<ReturnType<typeof aHasEverything>>) => w.B.post(`/api/transactions/${w.txId}/restore`, {}),
     ],
     [
       'PATCH a category',

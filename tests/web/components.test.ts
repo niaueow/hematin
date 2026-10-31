@@ -7,7 +7,7 @@ import AmountInput from '@web/components/AmountInput.vue';
 import AppButton from '@web/components/AppButton.vue';
 import AppChip from '@web/components/AppChip.vue';
 import AppInput from '@web/components/AppInput.vue';
-import { parseRupiah } from '@web/lib/money';
+import { parseRupiah } from '@web/lib/format';
 import { BUCKET_TONE } from '@web/lib/tones';
 
 // DESIGN.md §4.1–4.3: props → classes, the states each component computes, and the a11y wiring.

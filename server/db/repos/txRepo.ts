@@ -143,6 +143,15 @@ export function createTxRepo(db: Db) {
       const { count } = await db.transaction.updateMany({ where: { id, userId, ...live }, data: { deletedAt: now } });
       return count === 1;
     },
+
+    /** Undo a soft delete (the dashboard's "Urungkan"). False unless it's this user's and deleted. */
+    async restore(userId: string, id: string) {
+      const { count } = await db.transaction.updateMany({
+        where: { id, userId, deletedAt: { not: null } },
+        data: { deletedAt: null },
+      });
+      return count === 1;
+    },
   };
 }
 

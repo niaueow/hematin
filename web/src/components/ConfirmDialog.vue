@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useId, watch } from 'vue';
+import { computed, ref, useId } from 'vue';
 import AppButton from '@web/components/AppButton.vue';
-import { useTelegramBack } from '@web/composables/useTelegramBack';
+import { useModal } from '@web/composables/useModal';
 
 // DESIGN.md §4.5e: before destructive actions. Esc, a click on the overlay, or Telegram's back button = cancel.
 // Focus is trapped in the panel and starts on the cancel button (the safer default), then returns to whatever
-// had it before. Centered on desktop; a bottom sheet below 1024px.
+// had it before (useModal). Centered on desktop; a bottom sheet below 1024px.
 
 const props = withDefaults(
   defineProps<{
@@ -25,9 +25,6 @@ const emit = defineEmits<{ 'update:open': [open: boolean]; confirm: []; cancel: 
 const id = useId();
 const panel = ref<HTMLElement | null>(null);
 const cancelButton = ref<InstanceType<typeof AppButton> | null>(null);
-let returnFocus: HTMLElement | null = null;
-
-const isOpen = computed(() => props.open);
 
 function cancel() {
   if (!props.open) return;
@@ -35,45 +32,12 @@ function cancel() {
   emit('update:open', false);
 }
 
-useTelegramBack(isOpen, cancel);
-
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    cancel();
-    return;
-  }
-  if (event.key !== 'Tab' || !panel.value) return;
-  const focusable = [...panel.value.querySelectorAll<HTMLElement>(FOCUSABLE)];
-  const first = focusable[0];
-  const last = focusable.at(-1);
-  if (!first || !last) return;
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
-}
-
-watch(
-  () => props.open,
-  async (open) => {
-    if (open) {
-      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      await nextTick();
-      (cancelButton.value?.$el as HTMLElement | undefined)?.focus();
-    } else {
-      returnFocus?.focus();
-      returnFocus = null;
-    }
-  },
-  { immediate: true },
-);
+const { onKeydown } = useModal({
+  open: computed(() => props.open),
+  panel,
+  onCancel: cancel,
+  initialFocus: () => cancelButton.value?.$el as HTMLElement | undefined,
+});
 </script>
 
 <template>

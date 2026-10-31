@@ -423,9 +423,29 @@ Emits: `confirm`, `cancel`.
 - **Alert:** no live-region role (it's page content, not an announcement); Toast handles announcements.
 - **ConfirmDialog:** `role="alertdialog"`, `aria-modal`, labelled by its title and described by its message. Confirm only emits `confirm`; the page closes it (so it can show `loading` first).
 
+### 4.7 Dashboard pieces 🆕 (M14)
+
+Built from the existing tokens, like §4.5. Not in Figma yet; add them there when you have time.
+
+| Component | What | Look |
+|---|---|---|
+| `SegmentedControl` | One of a few (period, transaction type). `v-model`, `options`, `label`; a `radiogroup`, arrow keys move | Track `--background-hover`, radius 12, padding 4, gap 4; segment 32px, padding 0/12, `.text-caption-1`; selected = `--background-light` + `--content-brand-active`. Scrolls sideways when it doesn't fit (390px) |
+| `ChipButton` | A pressable chip (filters, category picks), `aria-pressed` | The AppChip look; unpressed = neutral tone; pressed = info tone + a 1px `--stroke-system-info` border (not colour-only) |
+| `BudgetMeter` | Spent vs allocation, saved vs target. `label`, `value`, `max`, `tone`, `valueLabel?`; `role="meter"` | Label/value row `.text-caption-1`; 8px track `--background-hover`, `--radius-full`; fill = the bucket's tone (default background), negative when over 100% |
+| `TxRow` | One transaction: note (else category), category chip in its bucket's tone, amount (income `+`, in positive). `editable` = the row opens the edit sheet + a 🗑 button | Row padding 12/8, radius 12, hover `--background-hover`; amount `.text-body-3-bold` tabular |
+| `AppSheet` | A form in a modal: bottom sheet below 1024px, centered (max 480px) above. Same behaviour as ConfirmDialog (`useModal`: focus trap, Esc, overlay, Telegram back = cancel, focus returns) | ConfirmDialog's panel + a header with a close `X` (20px); footer buttons like ConfirmDialog |
+
+Pages (PRD D2–D6), all with skeletons while loading and an EmptyState wherever data can be empty:
+- **Home:** the `/sisa` numbers from `/api/budget/current` (wants hero: week remaining, pace, month; needs: week, month; savings: total, % of target, bonus), meters, the 5 latest transactions, the NO_BUDGET alert.
+- **Transaksi:** period / type `SegmentedControl` + category `ChipButton`s, list by day ("Hari ini", "Kemarin", "Sen, 2 Nov"), "Muat lebih banyak", create/edit in `TxFormSheet` (AppSheet + AmountInput + AppInput), delete with ConfirmDialog, then an optimistic removal and an "Urungkan" toast (`POST /restore`).
+- **Statistik:** Minggu / Bulan / Tahun + prev/next in the URL query; vue-chartjs bar (spend over time), doughnut (per bucket), horizontal bar (per category), savings meter. Chart colours and font are read from the tokens at runtime and re-read on theme change (`web/src/lib/charts.ts`); axes use short rupiah (35rb, 1,2jt), tooltips the full amount.
+- **Profil:** name / @username / photo; categories (system ones marked "bawaan"; own ones rename / archive with undo); learned keywords (delete); sign out.
+
+All money and date text comes from `web/src/lib/format.ts` (WIB, using `server/budget/periods.ts`).
+
 ## 4.6 Playground (M12)
 
-`/playground` (OWNER only; the router guard sends anyone else home) renders every variant × size × state of Button, Input and Chip, plus AmountInput, side by side, for the PerfectPixel check at 100% zoom. Since M13 it also has SideNav (expanded / collapsed), BottomNav, Toast (static, plus buttons that call `useToast`), Alert, EmptyState, Skeleton and ConfirmDialog. It replaces Storybook in the production-only setup. Add each new component there.
+`/playground` (OWNER only; the router guard sends anyone else home) renders every variant × size × state of Button, Input and Chip, plus AmountInput, side by side, for the PerfectPixel check at 100% zoom. Since M13 it also has SideNav (expanded / collapsed), BottomNav, Toast (static, plus buttons that call `useToast`), Alert, EmptyState, Skeleton and ConfirmDialog; since M14 the §4.7 pieces. It replaces Storybook in the production-only setup. Add each new component there.
 
 ## 6. Decisions log
 

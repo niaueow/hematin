@@ -150,6 +150,12 @@ export class FakeDb {
           this.writes.push('tx.update');
           return ok(true);
         },
+        restore: (userId: string, id: string) => {
+          const tx = this.txs.find((t) => t.id === id && t.userId === userId && t.deletedAt !== null);
+          if (!tx) return ok(false);
+          tx.deletedAt = null;
+          return ok(true);
+        },
         softDelete: (userId: string, id: string, now: Date) => {
           const tx = this.live(userId).find((t) => t.id === id);
           if (!tx) return ok(false);
