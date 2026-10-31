@@ -140,18 +140,13 @@ scopingSuite(
   ['expireOverdue'],
 ); // housekeeping across all users, no user input
 
-scopingSuite(
-  'categoryRepo',
-  createCategoryRepo,
-  [
-    ['listUsable', (r) => r.listUsable(USER)],
-    ['findUsableById', (r) => r.findUsableById(USER, 'cat_1')],
-    ['findOwnById', (r) => r.findOwnById(USER, 'cat_1')],
-    ['createOwn', (r) => r.createOwn(USER, { slug: 'kucing', name: 'Kucing', bucket: 'NEEDS' })],
-    ['updateOwn', (r) => r.updateOwn(USER, 'cat_1', { name: 'Kucingku' })],
-  ],
-  ['listSystem'],
-); // seeded system rows only (userId NULL)
+scopingSuite('categoryRepo', createCategoryRepo, [
+  ['listUsable', (r) => r.listUsable(USER)],
+  ['findUsableById', (r) => r.findUsableById(USER, 'cat_1')],
+  ['findOwnById', (r) => r.findOwnById(USER, 'cat_1')],
+  ['createOwn', (r) => r.createOwn(USER, { slug: 'kucing', name: 'Kucing', bucket: 'NEEDS' })],
+  ['updateOwn', (r) => r.updateOwn(USER, 'cat_1', { name: 'Kucingku' })],
+]);
 
 scopingSuite('aliasRepo', createAliasRepo, [
   ['listForUser', (r) => r.listForUser(USER)],

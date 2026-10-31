@@ -47,6 +47,7 @@ const messages: [string, string][] = [
   ['INVITE_OWNER_ONLY', copy.INVITE_OWNER_ONLY],
   ['HELP', copy.HELP],
   ['COMING_SOON', copy.COMING_SOON],
+  ['TEMPORARY_ERROR', copy.TEMPORARY_ERROR],
   ['inviteCreated', copy.inviteCreated('https://t.me/hematin_bot?start=CODE', 48)],
   ...variants(copy.welcomeOwner).map((t): [string, string] => ['welcomeOwner', t]),
   ...variants(copy.welcomeInvited).map((t): [string, string] => ['welcomeInvited', t]),
@@ -204,6 +205,12 @@ describe('formatting helpers', () => {
     expect(copy.formatWeekRange('2026-11-02', '2026-11-08')).toBe('2–8 Nov');
     expect(copy.formatWeekRange('2026-10-26', '2026-11-01')).toBe('26 Okt – 1 Nov');
     expect(copy.formatWeekRange('2026-12-28', '2027-01-03')).toBe('28 Des – 3 Jan');
+  });
+
+  it('untilLabel: today, Sunday, or the date a mid-week segment ends', () => {
+    expect(copy.untilLabel('2026-11-08', '2026-11-08', true)).toBe('hari ini');
+    expect(copy.untilLabel('2026-11-08', '2026-11-04', true)).toBe('Minggu');
+    expect(copy.untilLabel('2026-12-31', '2026-12-29', false)).toBe('31 Des');
   });
 
   it('formatDayRange', () => {

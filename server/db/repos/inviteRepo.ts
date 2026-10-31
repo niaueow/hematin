@@ -17,10 +17,6 @@ export function createInviteRepo(db: Db) {
       });
       return count === 1;
     },
-
-    findUsable(codeHash: string, now: Date) {
-      return db.invite.findFirst({ where: { codeHash, usedAt: null, expiresAt: { gt: now } } });
-    },
   };
 }
 

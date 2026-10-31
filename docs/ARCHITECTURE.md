@@ -31,8 +31,9 @@ Browser / Mini App ──►│  /api/*  ─────────────
 │  ├─ db/generated/         # Prisma client (generated, gitignored)
 │  ├─ bot/
 │  │  ├─ bot.ts             # grammY Bot instance + middleware (auth, idempotency)
-│  │  ├─ handlers/          # text, commands, callback queries
-│  │  ├─ keyboards.ts       # inline keyboards
+│  │  ├─ flows.ts           # text, commands, callback queries: the logic, free of grammY (D-025)
+│  │  ├─ keyboards.ts       # inline keyboards + callback data (≤ 64 bytes)
+│  │  ├─ telegram.ts        # outbound: 429 retry, 403 → botBlocked, cron sender
 │  │  └─ copy.ts            # ALL user-facing Indonesian strings live here
 │  ├─ nlp/
 │  │  ├─ amount.ts          # amount parser (pure)
@@ -46,9 +47,9 @@ Browser / Mini App ──►│  /api/*  ─────────────
 │  │  ├─ periods.ts         # months, segments, WIB date utils (pure)
 │  │  ├─ engine.ts          # wants/needs/savings computations (pure)
 │  │  └─ service.ts         # loads transactions from DB → calls engine
-│  ├─ auth/                 # initData verify, magic link, sessions, requireUser middleware
-│  ├─ routes/               # /api/auth, /api/transactions, /api/summary, /api/budget, /api/categories, /api/cron
-│  ├─ jobs/                 # dailyReminder.ts, weeklyRecap.ts
+│  ├─ auth/                 # Phase 2: initData verify, magic link, sessions, requireUser middleware (empty)
+│  ├─ routes/               # health, telegram (webhook), cron · Phase 2: auth, transactions, summary, budget, categories
+│  ├─ jobs/                 # dailyReminder.ts (+ housekeeping.ts), weeklyRecap.ts, monthlyIncomeReminder.ts, deliver.ts
 │  └─ lib/                  # money formatting, errors, rate limit, logger
 ├─ web/                     # Vue 3 + Vite SPA (Phase 2)
 │  ├─ src/{pages,components,stores,api}/
@@ -124,9 +125,9 @@ See `docs/SECURITY.md §3`. Summary:
 
 | Service | Use | Failure mode |
 |---|---|---|
-| Telegram Bot API | messages, webhooks, Mini App | Retry once on 429 with `retry_after`; log others |
-| Neon | all data | Function returns 500; Telegram will retry the update (idempotency protects us) |
-| Groq | categorization fallback | 5 s timeout; on any error → ask the user with category buttons |
+| Telegram Bot API | messages, webhooks, Mini App | Retry once on 429 with `retry_after` (≤ 5 s); 403 → mark the user `botBlocked` and finish the update; others → 500, logged |
+| Neon | all data | Function returns 500 (logged). If it failed **before** the update was marked processed, Telegram retries it and it runs once the DB is back. If it failed **after**, the retry is dropped (at-most-once, D-025), so the bot first tells the user "lagi ada gangguan, cek /riwayat, kalau belum masuk kirim ulang" (Telegram needs no DB). Cron jobs fail with 500 and aren't retried (check the logs) |
+| Groq | categorization fallback | 5 s timeout; on any error, 429, bad answer or used-up quota → ask the user with category buttons. Recording never waits on Groq |
 | Vercel Cron | reminder + recap | No retries; check the logs |
 
 ## 7. Environments

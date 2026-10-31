@@ -87,6 +87,13 @@ export const rateLimited = (random?: Random) =>
     random,
   );
 
+/**
+ * Something failed after the update was marked processed (bot.ts 2b), so it won't be retried. The work may or
+ * may not have been saved: send them to /riwayat before typing it again (no duplicates).
+ */
+export const TEMPORARY_ERROR =
+  'Maaf, lagi ada gangguan di server 🙏\nCek /riwayat bentar lagi; kalau catatannya belum masuk, kirim ulang ya.';
+
 /** Commands from BotFather's list that later milestones implement. */
 export const COMING_SOON = 'Fitur ini lagi disiapin, sabar ya 🙏 Sementara cek /bantuan dulu.';
 
@@ -282,6 +289,10 @@ export type VerdictContext = {
   /** The segment ends on a Sunday, so the next allocation starts on Monday. */
   endsOnSunday: boolean;
 };
+
+/** When the current segment ends, for "sampai …": "hari ini", "Minggu", or a date ("31 Des") mid-week. */
+export const untilLabel = (end: string, today: string, endsOnSunday: boolean) =>
+  end === today ? 'hari ini' : endsOnSunday ? 'Minggu' : formatDate(end);
 
 /** "buat 4 hari", or "buat hari ini" on the segment's last day. */
 const forDays = (days: number) => (days > 0 ? `buat ${days} hari` : 'buat hari ini');

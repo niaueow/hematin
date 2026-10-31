@@ -56,7 +56,7 @@ All users are in **WIB (Asia/Jakarta)**.
 | F11 | Weekly recap Sunday ~22:00 WIB | P0 |
 | F12 | Income nudge: if no income logged for the current month, the bot asks for it (on first interaction and in the daily reminder) | P1 |
 | F13 | `/riwayat` (last N transactions), `/kategori` | P1 |
-| F14 | Slang amounts (goceng, ceban, goban…) | P2 |
+| F14 | Slang amounts (goceng, ceban, goban…). *As built: the BOT_SPEC §2.1 list (seceng, goceng, ceban, gocap, cepek); "goban" isn't recognized.* | P2 |
 
 ### Phase 2 — Dashboard
 | ID | Feature | Priority |
@@ -77,7 +77,7 @@ Custom ratios per user (DB columns exist, UI later) · CSV export · receipt OCR
 > As a user, I send "warteg 10k" and it's recorded as Makan (Needs) Rp10.000.
 - Amount parsing supports `10k`, `10rb`, `10 ribu`, `10.000`, `10000`, `1,5jt`, `1.5jt`, `2jt`.
 - Reply within ~3 s, showing category, bucket, and remaining for that bucket this week.
-- Wrong category is fixable with one tap; the chosen keyword is learned for this user.
+- Wrong category is fixable with one tap; the chosen keyword is learned for this user. *(As built: two taps, ✏️ Ganti kategori then the category; an LLM pick can be confirmed with one tap, 👍. See the M9 review.)*
 
 **US2 — Purchase check**
 > As a user, I send "mau donat 35k" and the bot tells me if I can afford it.

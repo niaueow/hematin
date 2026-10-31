@@ -528,3 +528,50 @@ describe('cross-user callbacks (SECURITY §3.3)', () => {
     expect(ctx.calls.map((c) => c.method)).toEqual(['answerCallbackQuery', 'answerCallbackQuery']);
   });
 });
+
+describe('cross-user categories (SECURITY §3.3)', () => {
+  /** A has a category of their own; B learns its id somehow and puts it in button data. */
+  function withPrivateCategory() {
+    const ctx = world({ income: true });
+    ctx.db.categories.push({
+      id: 'cat_a_private',
+      userId: 'u1',
+      slug: 'kucing',
+      name: 'Kucing',
+      emoji: null,
+      bucket: 'NEEDS',
+      keywords: [],
+      archived: false,
+      createdAt: new Date(0),
+    });
+    return ctx;
+  }
+
+  it('B can’t pick A’s category for a new log', async () => {
+    const ctx = withPrivateCategory();
+    await ctx.say(B, 'cimol 5k');
+    await ctx.press(B, 'pk:n1:cat_a_private');
+    expect(edits(ctx.calls)).toEqual([copy.EXPIRED]);
+    expect(ctx.live()).toEqual([]);
+    expect(ctx.db.aliases).toEqual([]);
+  });
+
+  it('B can’t move their own transaction into A’s category, and isn’t offered it', async () => {
+    const ctx = withPrivateCategory();
+    await ctx.say(B, 'warteg 10k');
+    const id = ctx.lastTx().id;
+    await ctx.press(B, `tx:${id}:cat`);
+    const offered = buttons(lastCall(ctx.calls, 'editMessageReplyMarkup')).map((b) => b.callback_data);
+    expect(offered).not.toContain(`tc:${id}:cat_a_private`);
+    await ctx.press(B, `tc:${id}:cat_a_private`);
+    expect(toasts(ctx.calls).at(-1)).toBe(copy.CATEGORY_UNAVAILABLE);
+    expect(ctx.lastTx()).toMatchObject({ userId: 'u2', categoryId: 'sys_makan' });
+  });
+
+  it('A’s own category is usable by A', async () => {
+    const ctx = withPrivateCategory();
+    await ctx.say(A, 'whiskas 50k');
+    await ctx.press(A, 'pk:n1:cat_a_private');
+    expect(ctx.lastTx()).toMatchObject({ userId: 'u1', categoryId: 'cat_a_private' });
+  });
+});

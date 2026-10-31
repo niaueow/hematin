@@ -97,13 +97,15 @@ Don't trust `initDataUnsafe` on the client for anything. It's for display only.
 
 ## 9. Security checklist before go-live
 
-- [ ] Webhook rejects requests with a missing or wrong secret header (test with curl)
-- [ ] Cron endpoints reject requests without the bearer token
-- [ ] Cross-user tests pass (§3.3)
-- [ ] Magic link: second use fails; expired fails; a GET to `/auth?token=` doesn't consume it
-- [ ] initData: tampered `user` field fails; old `auth_date` fails
-- [ ] No secrets in the repo (`git log -p | grep -i token` is clean, or use gitleaks)
-- [ ] Groq ZDR enabled
-- [ ] Vercel env vars are scoped to Production only
-- [ ] A Neon backup branch exists before any migration deploy
-- [ ] The first `/start` from `OWNER_TELEGRAM_ID` creates the OWNER; any other unknown ID without an invite is rejected
+Status after the Phase 1 review (M9, 2026-10-31). Automated items run in every Vercel build (`npm test`); manual ones are for the owner.
+
+- [x] Webhook rejects requests with a missing or wrong secret header: `tests/api/app.test.ts` (401, constant-time). Manual: `curl.exe -X POST <APP_URL>/api/telegram/webhook` → 401
+- [x] Cron endpoints reject requests without the bearer token: `tests/api/app.test.ts` (all three routes)
+- [x] Cross-user tests pass (§3.3), bot side: `tests/bot/logging.test.ts`, `purchase.test.ts`, `noSpend.test.ts`, `tests/db/repoScoping.test.ts`. API side: Phase 2
+- [ ] Magic link: second use fails; expired fails; a GET to `/auth?token=` doesn't consume it (Phase 2)
+- [ ] initData: tampered `user` field fails; old `auth_date` fails (Phase 2)
+- [x] No secrets in the repo: history and tree scanned on 2026-10-31 for bot tokens, `gsk_` keys, `npg_` passwords and credentialed Postgres URLs; only placeholders in `tests/env.test.ts` and `docs/SETUP.md`. Re-check before going public with gitleaks
+- [ ] Groq ZDR enabled (manual: Groq console → Data Controls)
+- [ ] Vercel env vars are scoped to Production only (manual: Vercel → Settings → Environment Variables)
+- [ ] A Neon backup branch exists before any migration deploy (manual, every time)
+- [x] The first `/start` from `OWNER_TELEGRAM_ID` creates the OWNER; any other unknown ID without an invite is rejected: `tests/bot/bot.test.ts`

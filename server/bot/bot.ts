@@ -20,8 +20,9 @@ import { createFlows, type CallbackResult, type FlowDeps, type MessageInput, typ
 import { ignoreNotModified, isBlockedError } from './telegram.js';
 
 // The grammY bot (ARCHITECTURE §3.1). Middleware order:
-//   1. idempotency (ProcessedUpdate)  2. private chats only  3. resolve user (strangers stop here)
-//   4. rate limit (known users)       5. income nudge (after the handler)  6. handlers (logic in flows.ts)
+//   1. idempotency (ProcessedUpdate)  2. private chats only  (2b. apology if anything below fails)
+//   3. resolve user (strangers stop here)  4. rate limit (known users)  5. income nudge (after the handler)
+//   6. handlers (logic in flows.ts)
 // Strangers (unknown or disabled users) get exactly one canned reply and cause no DB writes besides the
 // ProcessedUpdate row, except the two ways in: the one-time owner bootstrap and a valid invite (SECURITY §2).
 
@@ -101,6 +102,18 @@ export function createBot(token: string, deps: BotDeps, botInfo?: UserFromGetMe)
       return;
     }
     await next();
+  });
+
+  // 2b. If anything below fails (Neon down, a bug), the update is already marked processed, so Telegram's retry
+  // will be dropped. Tell the user (Telegram needs no DB) instead of going silent, then fail as before (→ 500,
+  // logged). A failure before the mark isn't caught here: that update is retried until the DB is back.
+  app.use(async (ctx, next) => {
+    try {
+      await next();
+    } catch (err) {
+      if (!isBlockedError(err)) await ctx.reply(copy.TEMPORARY_ERROR).catch(() => undefined);
+      throw err;
+    }
   });
 
   // 3. Resolve the user. Strangers are handled here and never reach the rest.

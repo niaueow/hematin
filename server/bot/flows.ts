@@ -356,8 +356,7 @@ export function createFlows(deps: FlowDeps) {
       expiresAt: new Date(deps.now().getTime() + INTENT_TTL_MS),
     });
     const endsOnSunday = isoWeekday(snap.segment.end) === 7;
-    const until =
-      snap.segment.end === snap.today ? 'hari ini' : endsOnSunday ? 'Minggu' : copy.formatDate(snap.segment.end);
+    const until = copy.untilLabel(snap.segment.end, snap.today, endsOnSunday);
     return {
       text: copy.verdict({ check, item, until, endsOnSunday }, deps.random),
       keyboard: kb.purchaseKeyboard(intent.id, copy.itemEmoji(item)),
@@ -591,5 +590,3 @@ export function createFlows(deps: FlowDeps) {
     },
   };
 }
-
-export type Flows = ReturnType<typeof createFlows>;

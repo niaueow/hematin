@@ -37,11 +37,6 @@ export function createCategoryRepo(db: Db) {
       const { count } = await db.category.updateMany({ where: { id, userId }, data: patch });
       return count === 1;
     },
-
-    /** Not user data: the seeded default dictionary (BOT_SPEC §2.3 step 2). */
-    listSystem() {
-      return db.category.findMany({ where: { userId: null, archived: false } });
-    },
   };
 }
 
