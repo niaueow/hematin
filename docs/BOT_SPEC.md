@@ -23,7 +23,7 @@ Implementation notes (M4):
 - **Strangers** (unknown or DISABLED users) get the canned reply to every message. Their button presses are only acknowledged.
 - **`/start <code>`** from someone already registered is a normal welcome back; the invite stays unused. An invalid, used or expired code gets `INVITE_INVALID`.
 - **Owner bootstrap** happens only on `/start`, and only while no OWNER exists.
-- **Commands from the BotFather list** that later milestones build (`/dashboard`) reply "lagi disiapin". Unknown commands get the help. Since M5, `/sisa`, `/pemasukan`, `/riwayat`, `/undo` and `/kategori` work (§3.5).
+- **Unknown commands** get the help. Since M5, `/sisa`, `/pemasukan`, `/riwayat`, `/undo` and `/kategori` work (§3.5). Since M10, `/dashboard` sends the magic link (text, link preview off) and a `[📊 Buka dashboard]` `web_app` button that opens the Mini App at `APP_URL`. Over 5 links in an hour it sends only the button (SECURITY §5).
 - **Rate limit:** the 21st message within a minute gets one warning; later ones in that minute are ignored.
 - **Blocked bot:** a user who blocked the bot is marked `botBlocked` on the 403, and unmarked the next time they write.
 

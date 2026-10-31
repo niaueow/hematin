@@ -384,6 +384,7 @@ export function setup(
     /** Picks copy variants; 0 → always the first. */
     random?: () => number;
     llm?: BotDeps['llm'];
+    dashboard?: BotDeps['dashboard'];
     apiError?: (method: string) => number | null;
   } = {},
 ) {
@@ -404,6 +405,7 @@ export function setup(
       newInviteCode: () => `CODE_${String(++codes).padStart(16, '0')}`,
       newNonce: () => `n${++nonces}`,
       ...(options.llm && { llm: options.llm }),
+      ...(options.dashboard && { dashboard: options.dashboard }),
     },
     BOT_INFO as never,
   );

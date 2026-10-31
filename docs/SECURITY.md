@@ -42,6 +42,8 @@ Every request sends `Authorization: tma <raw initData>`. Server-side:
 
 Don't trust `initDataUnsafe` on the client for anything. It's for display only.
 
+As built (M10, `server/auth/initData.ts`, checked against the Telegram Mini Apps docs on 2026-10-31): the data_check_string includes every field except `hash`, so the newer `signature` field stays in (it's only left out for the third-party Ed25519 check). A duplicated field, a hash that isn't 64 lowercase hex characters, or a missing `auth_date` is rejected before anything else. `auth_date` up to 60 s in the future is tolerated (clock skew).
+
 ### 3.2 Magic link (normal browser)
 1. `/dashboard` in the bot → generate 32 random bytes (base64url), store `sha256(token)` with `expiresAt = now + 5 min`, and send `${APP_URL}/auth?token=…` **with link preview disabled**.
 2. The SPA page `/auth` POSTs the token to `/api/auth/magic`. A GET never consumes it.
@@ -49,6 +51,12 @@ Don't trust `initDataUnsafe` on the client for anything. It's for display only.
 4. Session: 32 random bytes; store only the sha256 hash; expires in 30 days; refresh `lastSeenAt` at most once per hour.
 5. Cookie: `__Host-session=<token>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000`.
 6. `/api/auth/logout` and `/logout-all` revoke sessions. Disabling a user revokes all their sessions.
+
+As built (M10, `server/auth/service.ts`, `http.ts`, `routes/auth.ts`):
+- `POST /api/auth/magic` also requires the CSRF headers below (it sets a cookie, so a foreign page mustn't be able to log you into another account), and is limited to 20 attempts per IP per 10 minutes (`x-real-ip`, set by Vercel). A wrong, used or expired token, or a DISABLED user, is the same 401 `INVALID_TOKEN`.
+- `requireUser`: a request with an `Authorization` header must be `tma <initData>` (anything else is 401); without one, the `__Host-session` cookie. A session only counts while it's unexpired, unrevoked, and its user is ACTIVE, so disabling a user locks them out of both paths at once.
+- CSRF: a cookie-authenticated request that isn't GET/HEAD/OPTIONS needs `X-Requested-With: fetch` and `Origin` equal to `APP_URL`, else 403 `CSRF`. A tma request needs neither (a browser never adds that header cross-site).
+- `/api/auth/logout` with a tma header just clears the cookie (there's no session); `/logout-all` works from both.
 
 ### 3.3 Authorization (the part that keeps users out of each other's data)
 - `requireUser` sets `req.user`. **No route reads a user ID from params, query, or body.**
@@ -71,13 +79,14 @@ Don't trust `initDataUnsafe` on the client for anything. It's for display only.
 |---|---|---|
 | Messages per user | 20 / minute | `RateLimit` (Postgres) |
 | Groq calls per user | 50 / day | `RateLimit` |
-| Magic links per user | 5 / hour | `RateLimit` |
+| Magic links per user | 5 / hour | `MagicLinkToken` rows created in the last hour (`countCreatedSince`) |
 | `/api/auth/magic` attempts per IP | 20 / 10 min | `RateLimit` |
 | Invites | OWNER only; single use; 48 h | `Invite` |
 
 ## 6. HTTP hardening
 
 - `helmet` with a CSP. Allow `script-src 'self' https://telegram.org` (the Mini App script) and `frame-ancestors` for Telegram Web (`https://web.telegram.org`) so the Mini App can be embedded. **Verify the exact Mini App embedding requirements at build time.**
+- As built (M10): the API sends helmet's `default-src 'none'; frame-ancestors 'none'`. The SPA gets its headers from `vercel.json` (every path but `/api/`): `default-src 'self'; script-src 'self' https://telegram.org; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors https://web.telegram.org`, plus `Referrer-Policy: no-referrer` (so `/auth?token=…` never leaks in a Referer) and `X-Content-Type-Options: nosniff`. Checked against `telegram-web-app.js` on 2026-10-31: it needs no inline script. On Telegram Web (iframe) it injects a `<style>` with the client's custom CSS, which `style-src 'self'` blocks: cosmetic only. Add Google Fonts to `style-src`/`font-src` when DESIGN.md's fonts land.
 - `app.disable('x-powered-by')`. JSON body limit `100kb`.
 - No CORS middleware (same origin). If it's ever needed, use an explicit allowlist and never `*` with credentials.
 - Error handler: generic message to clients; details only in server logs.

@@ -108,6 +108,7 @@ See `docs/SECURITY.md §3`. Summary:
 - **Mini App:** every API call sends `Authorization: tma <initData>`, which is verified per request (HMAC with the bot token, `auth_date` ≤ 24 h).
 - **Browser:** `/dashboard` creates a magic link. The SPA posts the token to `/api/auth/magic`, gets a `__Host-session` cookie, and later requests send the cookie.
 - The `requireUser` middleware accepts either method and sets `req.user`. Routes **only** use `req.user.id`.
+- As built (M10): `server/auth/` (`initData.ts`, `service.ts`, `http.ts`), routes in `server/routes/auth.ts`. The middleware sets `req.auth` (`{ user, method }`); routes use `req.auth.user.id`. The SPA (`web/src`) has `api/client.ts` (tma header inside Telegram, cookie elsewhere, always `X-Requested-With: fetch`), `session.ts` (`/api/me`, cached), and `router.ts` (every page but `/auth` and `/masuk` needs a user).
 
 ## 4. Data access rules
 

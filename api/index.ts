@@ -1,6 +1,7 @@
 // The one Vercel Function. vercel.json rewrites every /api/* request here; req.url keeps the
 // original path, so Express routes on /api/... as usual. Relative imports only (DECISIONS D-022).
 import { createApp } from '../server/app.js';
+import { createAuthService, type AuthRepos } from '../server/auth/service.js';
 import { createBot, type BotRepos } from '../server/bot/bot.js';
 import { createTelegramSender, reportBlocked, retryOn429 } from '../server/bot/telegram.js';
 import { getPrisma, type Db } from '../server/db/prisma.js';
@@ -43,11 +44,31 @@ const botRepos = (db: Db): BotRepos => ({
   noSpendDays: createNoSpendRepo(db),
 });
 
+// Dashboard auth (SECURITY §3): magic links and sessions in Postgres, initData verified with the bot token.
+const authRepos = (db: Db): AuthRepos => ({
+  users: createUserRepo(db),
+  magicTokens: createMagicTokenRepo(db),
+  sessions: createSessionRepo(db),
+  rateLimits: createRateLimitRepo(db),
+});
+const auth = createAuthService({
+  repos: authRepos(prisma),
+  transaction: (fn) => prisma.$transaction((tx) => fn(authRepos(tx))),
+  config: {
+    appUrl: env.APP_URL,
+    botToken: env.TELEGRAM_BOT_TOKEN,
+    sessionTtlDays: env.SESSION_TTL_DAYS,
+    magicLinkTtlMinutes: env.MAGIC_LINK_TTL_MINUTES,
+  },
+  now: () => new Date(),
+});
+
 const bot = createBot(env.TELEGRAM_BOT_TOKEN, {
   repos: botRepos(prisma),
   transaction: (fn) => prisma.$transaction((tx) => fn(botRepos(tx))),
   ownerTelegramId: env.OWNER_TELEGRAM_ID,
   now: () => new Date(),
+  dashboard: { appUrl: env.APP_URL, createMagicLink: (userId) => auth.createMagicLink(userId) },
   llm: {
     classify: (text, categories) =>
       classifyWithGroq(text, categories, {
@@ -73,6 +94,7 @@ const initBot = () =>
 
 export default createApp({
   version: env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'unknown',
+  auth: { auth, appUrl: env.APP_URL },
   telegram: {
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET,
     handleUpdate: async (update) => {

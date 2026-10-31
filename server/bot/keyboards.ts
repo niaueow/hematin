@@ -136,3 +136,6 @@ export function historyKeyboard(txs: readonly (copy.TxSummary & { id: string })[
 /** Under the daily reminder (BOT_SPEC §4). */
 export const noSpendKeyboard = (date: string) =>
   new InlineKeyboard().text(copy.BUTTON.noSpend, encodeCallback({ kind: 'noSpend', date }));
+
+/** Opens the dashboard inside Telegram as a Mini App (web_app buttons work in private chats). */
+export const dashboardKeyboard = (appUrl: string) => new InlineKeyboard().webApp(copy.BUTTON.dashboard, appUrl);

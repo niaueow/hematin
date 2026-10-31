@@ -97,6 +97,15 @@ export const TEMPORARY_ERROR =
 /** Commands from BotFather's list that later milestones implement. */
 export const COMING_SOON = 'Fitur ini lagi disiapin, sabar ya 🙏 Sementara cek /bantuan dulu.';
 
+// --- dashboard (BOT_SPEC §1, SECURITY §3.2) ------------------------------------------------------
+
+/** /dashboard: the one-time link for a browser. Sent with link preview off, so no crawler opens it. */
+export const dashboardLink = (url: string, minutes: number) =>
+  `Link dashboard buat browser (sekali pakai, ${minutes} menit):\n${url}\nJangan dikasih ke orang lain ya. Di HP, tap tombol di bawah aja 👇`;
+
+export const MAGIC_LINK_LIMIT =
+  'Udah 5 link dalam sejam terakhir 😅 Tunggu bentar ya. Sementara, buka lewat tombol di bawah.';
+
 // --- monthly income reminder (BOT_SPEC §4) -------------------------------------------------------
 
 /**
@@ -192,6 +201,7 @@ export const BUTTON = {
   skip: '💪 Ga jadi',
   log: '📝 Catat',
   noSpend: '✅ Hari ini emang ga keluar duit',
+  dashboard: '📊 Buka dashboard',
 } as const;
 
 // --- logging (BOT_SPEC §2, §3) -------------------------------------------------------------------

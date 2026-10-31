@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- /auth?token=… must never leak through a Referer header (also set as a response header in vercel.json). -->
+    <meta name="referrer" content="no-referrer" />
     <title>Hematin</title>
+    <!-- Telegram Mini App bridge: provides initData inside Telegram; harmless in a normal browser. -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
     <div id="app"></div>

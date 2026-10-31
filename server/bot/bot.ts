@@ -60,6 +60,8 @@ export type BotDeps = {
   newNonce?: () => string;
   /** Categorize step 3 (Groq). Optional: without it unknown items go straight to the category buttons. */
   llm?: FlowDeps['llm'];
+  /** /dashboard (magic link + Mini App button). Optional: without it /dashboard says "lagi disiapin". */
+  dashboard?: FlowDeps['dashboard'];
 };
 
 export const INVITE_TTL_HOURS = 48;
@@ -81,6 +83,7 @@ export function createBot(token: string, deps: BotDeps, botInfo?: UserFromGetMe)
     newNonce: deps.newNonce ?? (() => randomBytes(6).toString('base64url')),
     random: deps.random,
     llm: deps.llm,
+    dashboard: deps.dashboard,
   });
   const app = new Composer<BotContext>();
 
@@ -219,7 +222,7 @@ export function createBot(token: string, deps: BotDeps, botInfo?: UserFromGetMe)
   app.command('riwayat', async (ctx) => send(ctx, await flows.riwayat(userOf(ctx))));
   app.command('undo', async (ctx) => send(ctx, await flows.undo(userOf(ctx))));
   app.command('kategori', async (ctx) => send(ctx, await flows.kategori(userOf(ctx))));
-  app.command('dashboard', (ctx) => ctx.reply(copy.COMING_SOON)); // TODO(Phase 2): magic link
+  app.command('dashboard', async (ctx) => send(ctx, await flows.dashboard(userOf(ctx))));
   app.on('message:entities:bot_command', (ctx) => ctx.reply(copy.HELP));
   app.on('message:text', async (ctx) => send(ctx, await flows.onText(userOf(ctx), input(ctx))));
   app.on('callback_query:data', async (ctx) =>
@@ -250,7 +253,10 @@ function input(ctx: BotContext): MessageInput {
 
 async function send(ctx: BotContext, reply: Reply) {
   if (reply.asksIncome) ctx.incomePrompted = true;
-  await ctx.reply(reply.text, reply.keyboard ? { reply_markup: reply.keyboard } : {});
+  await ctx.reply(reply.text, {
+    ...(reply.keyboard && { reply_markup: reply.keyboard }),
+    ...(reply.disablePreview && { link_preview_options: { is_disabled: true } }),
+  });
 }
 
 async function applyCallback(ctx: BotContext, result: CallbackResult) {

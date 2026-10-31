@@ -16,12 +16,14 @@ Every endpoint under **Auth: user** goes through `requireUser`. The user is **al
 
 | Method | Path | Body | Result |
 |---|---|---|---|
-| POST | `/api/auth/magic` | `{ token }` | Consumes the token (single use, ≤ 5 min). Sets the `__Host-session` cookie. Returns `{ user }`. |
+| POST | `/api/auth/magic` | `{ token }` | Consumes the token (single use, ≤ 5 min). Sets the `__Host-session` cookie. Returns `{ user }` (the `/api/me` shape). 401 `INVALID_TOKEN`, 403 `CSRF` (needs the CSRF headers below), 429 `RATE_LIMITED` (20 / 10 min / IP). |
 | POST | `/api/auth/logout` | — | Revokes the current session and clears the cookie. |
-| POST | `/api/auth/logout-all` | — | Revokes all of this user's sessions. |
+| POST | `/api/auth/logout-all` | — | Revokes all of this user's sessions. Returns `{ ok, revoked }`. |
 | GET | `/api/me` | — | `{ id, firstName, telegramUsername, role, needsPct, wantsPct, savingsPct }` |
 
 The Mini App doesn't call `/auth/magic`. It sends `Authorization: tma <initData>` on every request.
+
+Implemented in M10: everything in this section. Without valid credentials every `Auth: user` endpoint returns 401 `UNAUTHORIZED`. The SPA's client is `web/src/api/client.ts`.
 
 The SPA route `/auth?token=…` renders a page whose JS **POSTs** the token. A GET never consumes it, so link-preview crawlers can't burn the token.
 

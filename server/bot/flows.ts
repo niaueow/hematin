@@ -36,6 +36,8 @@ export type Reply = {
   keyboard?: InlineKeyboard;
   /** The reply itself asks for this month's income, so the separate income nudge isn't needed. */
   asksIncome?: boolean;
+  /** No link preview (the magic link: SECURITY §3.2). */
+  disablePreview?: boolean;
 };
 
 /** What to do with a button press: a toast, edit the pressed message (text or just buttons), or send a new one. */
@@ -59,6 +61,11 @@ export type FlowDeps = {
   random?: () => number;
   /** Without it, step 3 is skipped and an unknown item goes straight to the category buttons. */
   llm?: { classify: Classify; dailyLimit: number; log: (entry: LlmLog) => void };
+  /** /dashboard. Without it, /dashboard says "lagi disiapin". */
+  dashboard?: {
+    appUrl: string;
+    createMagicLink: (userId: string) => Promise<{ url: string; ttlMinutes: number } | null>;
+  };
 };
 
 /** Pending questions ("Berapa duitnya?", "Maksudnya Rp20.000?", category buttons) last 10 minutes. */
@@ -571,6 +578,19 @@ export function createFlows(deps: FlowDeps) {
       const [tx] = await repos.transactions.latest(user.id, 1, since);
       if (!tx) return { text: copy.NOTHING_TO_UNDO };
       return { text: copy.confirmDelete(summary(tx)), keyboard: kb.confirmDeleteKeyboard(tx.id) };
+    },
+
+    /**
+     * /dashboard (BOT_SPEC §1, SECURITY §3.2): a one-time magic link for a browser, with link preview off, plus a
+     * button that opens the dashboard as a Mini App (initData, no link needed).
+     */
+    async dashboard(user: User): Promise<Reply> {
+      const { dashboard } = deps;
+      if (!dashboard) return { text: copy.COMING_SOON };
+      const keyboard = kb.dashboardKeyboard(dashboard.appUrl);
+      const link = await dashboard.createMagicLink(user.id);
+      if (!link) return { text: copy.MAGIC_LINK_LIMIT, keyboard };
+      return { text: copy.dashboardLink(link.url, link.ttlMinutes), keyboard, disablePreview: true };
     },
 
     async kategori(user: User): Promise<Reply> {

@@ -54,7 +54,16 @@ PowerShell tip: `curl` is an alias for `Invoke-WebRequest`. Use **`curl.exe`** f
    - Use the same values as in Vercel: `<APP_URL>` has no trailing slash, and the secret is 32+ characters of `[A-Za-z0-9_-]`. A wrong secret makes every update fail with 401.
    - Paste the token only in your own terminal. It's never needed in the repo or in chat.
 4. Send `/start` to your bot. Because your Telegram ID equals `OWNER_TELEGRAM_ID`, you're created as **OWNER** automatically. Everyone else needs an invite from `/invite`.
-5. Set the bot's **menu button** to open the Mini App at `https://<your-app>.vercel.app/` (BotFather → your bot → Bot Settings → Menu Button, or the `setChatMenuButton` API).
+5. Set the bot's **menu button** to open the Mini App at `<APP_URL>/`. Either:
+   - **BotFather:** `/mybots` → your bot → **Bot Settings** → **Menu Button** → **Configure menu button** → send the URL (`<APP_URL>`, https) → send the title, e.g. `📊 Dashboard`.
+   - **Or the Bot API** (PowerShell; the body is sent as UTF-8 so the emoji survives):
+     ```powershell
+     $token = "<TELEGRAM_BOT_TOKEN>"
+     $body = @{ menu_button = @{ type = "web_app"; text = "📊 Dashboard"; web_app = @{ url = "<APP_URL>" } } } | ConvertTo-Json -Depth 4
+     Invoke-RestMethod -Method Post -Uri "https://api.telegram.org/bot$token/setChatMenuButton" -ContentType "application/json; charset=utf-8" -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
+     Invoke-RestMethod "https://api.telegram.org/bot$token/getChatMenuButton"
+     ```
+   Close and reopen the chat to see it. Tapping it opens the dashboard signed in (Mini App initData); `/dashboard` sends a one-time link for a laptop browser.
 6. Set commands with BotFather `/setcommands`:
    ```
    sisa - Sisa duit minggu & bulan ini

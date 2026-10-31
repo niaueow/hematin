@@ -9,9 +9,9 @@ Telegram bot for tracking pocket money with a built-in 50/30/20 budget that nudg
 - `/sisa`, `/riwayat`, `/undo`, `/kategori`, `/pemasukan`
 - Reminder at ~21:00 WIB if you haven't logged anything, recap every Sunday ~22:00 WIB, income reminder on the 1st
 - Invite-only (`/invite`, owner only)
-- Phase 2 (not built yet): dashboard with charts (week/month/year) + full CRUD, inside Telegram or in the browser, no password. `/dashboard` replies "lagi disiapin" until then
+- Phase 2: dashboard with charts (week/month/year) + full CRUD, inside Telegram or in the browser, no password. Sign-in is built (`/dashboard`, the 📊 menu button); the charts and CRUD aren't yet
 
-**Status:** Phase 1 (the bot) is built and reviewed (M0–M9). Next: use it daily for 2 weeks, tweak copy, then Phase 2.
+**Status:** Phase 1 (the bot) is built and reviewed (M0–M9). Phase 2 has started: dashboard sign-in works (Mini App + `/dashboard` magic link, M10); the dashboard pages are next.
 
 **Stack:** Vue 3 · Express · Prisma · Neon Postgres · grammY · Groq · Vercel
 
