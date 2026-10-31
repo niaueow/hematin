@@ -20,6 +20,18 @@ export function createChatStateRepo(db: Db) {
       });
     },
 
+    /**
+     * Claims the current state if it's still `kind` with this `nonce` (the one on the buttons) and not expired,
+     * deleting it. Of two concurrent presses only one gets the state; an old keyboard gets null.
+     */
+    async take(userId: string, kind: ChatStateKind, nonce: string, now: Date) {
+      const where = { userId, kind, expiresAt: { gt: now }, payload: { path: ['nonce'], equals: nonce } };
+      const state = await db.chatState.findFirst({ where });
+      if (!state) return null;
+      const { count } = await db.chatState.deleteMany({ where });
+      return count === 1 ? state : null;
+    },
+
     async clear(userId: string) {
       await db.chatState.deleteMany({ where: { userId } });
     },

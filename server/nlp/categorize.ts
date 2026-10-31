@@ -31,7 +31,7 @@ export type Categorized = {
 export const FILLER_WORDS: ReadonlySet<string> = new Set([
   'aku', 'gue', 'gw', 'gua', 'saya', 'ku',
   'mau', 'pengen', 'pingin', 'boleh', 'bolehkah', 'ga', 'gak', 'nggak', 'kah', 'kalo', 'kalau',
-  'beli', 'bayar', 'jajan', 'nabung', 'dapet', 'dapat', 'dikasih', 'gajian',
+  'beli', 'bayar', 'jajan', 'nabung', 'dapet', 'dapat', 'dikasih', 'gajian', 'pemasukan',
   'tadi', 'td', 'barusan', 'abis', 'habis', 'udah', 'sudah', 'baru',
   'buat', 'untuk', 'utk', 'di', 'ke', 'dari', 'yg', 'yang', 'pake', 'pakai',
   'dong', 'nih', 'sih', 'ya', 'deh', 'kok', 'aja', 'nya', 'gimana', 'gmn',
@@ -42,14 +42,24 @@ export const FILLER_WORDS: ReadonlySet<string> = new Set([
  * minus the amount if only fillers were left ("jajan 10k" → "jajan"). Words of `keep` (the matched
  * keyword) are never dropped, so "dapet uang jajan 2jt" → "uang jajan". Max 120 characters (API note limit).
  */
-export function extractItem(text: string, amountTexts: readonly string[] = [], keep: string | null = null): string {
+/** The words of a message for item extraction: amounts and punctuation removed. */
+function itemWords(text: string, amountTexts: readonly string[]): string[] {
   let rest = normalize(text);
   for (const amountText of amountTexts) rest = rest.replace(amountText, ' ');
-  const words = rest
+  return rest
     .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
     .split(/\s+/)
     .map((w) => w.replace(/^-+|-+$/g, ''))
     .filter(Boolean);
+}
+
+/** True if nothing but filler words is left once the amounts are removed ("15rb aja"). */
+export function onlyFillers(text: string, amountTexts: readonly string[]): boolean {
+  return itemWords(text, amountTexts).every((w) => FILLER_WORDS.has(w));
+}
+
+export function extractItem(text: string, amountTexts: readonly string[] = [], keep: string | null = null): string {
+  const words = itemWords(text, amountTexts);
   const kept = new Set<number>();
   const keepWords = keep ? keep.split(' ') : [];
   for (let i = 0; keepWords.length > 0 && i + keepWords.length <= words.length; i++) {

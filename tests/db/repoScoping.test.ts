@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseLocalDate } from '@server/budget/periods.js';
 import type { Db } from '@server/db/prisma.js';
 import { createAliasRepo } from '@server/db/repos/aliasRepo.js';
 import { createCategoryRepo } from '@server/db/repos/categoryRepo.js';
+import { createChatStateRepo } from '@server/db/repos/chatStateRepo.js';
 import { createIntentRepo } from '@server/db/repos/intentRepo.js';
 import { createTxRepo } from '@server/db/repos/txRepo.js';
 
@@ -159,12 +160,23 @@ scopingSuite('aliasRepo', createAliasRepo, [
   ['deleteOwn', (r) => r.deleteOwn(USER, 'al_1')],
 ]);
 
+scopingSuite('chatStateRepo', createChatStateRepo, [
+  ['get', (r) => r.get(USER, now)],
+  ['set', (r) => r.set(USER, 'AWAIT_AMOUNT', { nonce: 'n1' }, now)],
+  ['take', (r) => r.take(USER, 'AWAIT_CATEGORY', 'n1', now)],
+  ['clear', (r) => r.clear(USER)],
+]);
+
 describe('specific guarantees', () => {
   it('lookups by id are findFirst({ id, userId, deletedAt: null })', async () => {
     const { db, calls } = fakeDb();
     await createTxRepo(db).findById(USER, 'tx_1');
     expect(calls).toEqual([
-      { model: 'transaction', method: 'findFirst', args: { where: { id: 'tx_1', userId: USER, deletedAt: null } } },
+      {
+        model: 'transaction',
+        method: 'findFirst',
+        args: { where: { id: 'tx_1', userId: USER, deletedAt: null }, include: { category: true } },
+      },
     ]);
   });
 
@@ -192,5 +204,29 @@ describe('specific guarantees', () => {
     const { db, calls } = fakeDb();
     await createTxRepo(db).listForUser(USER, { limit: 500 });
     expect(calls[0]?.args.take).toBe(100);
+  });
+});
+
+describe('chatStateRepo.take', () => {
+  it('claims only the caller’s unexpired state of that kind with that nonce, by a conditional delete', async () => {
+    const { db, calls } = fakeDb();
+    await createChatStateRepo(db).take(USER, 'CONFIRM_AMOUNT', 'n1', now);
+    const where = {
+      userId: USER,
+      kind: 'CONFIRM_AMOUNT',
+      expiresAt: { gt: now },
+      payload: { path: ['nonce'], equals: 'n1' },
+    };
+    expect(calls).toEqual([{ model: 'chatState', method: 'findFirst', args: { where } }]); // nothing found → no delete
+  });
+
+  it('returns the state only to the caller whose delete removed it (two taps → one wins)', async () => {
+    const state = { userId: USER, kind: 'AWAIT_CATEGORY', payload: { nonce: 'n1' } };
+    const findFirst = vi.fn().mockResolvedValue(state);
+    const deleteMany = vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const repo = createChatStateRepo({ chatState: { findFirst, deleteMany } } as unknown as Db);
+    expect(await repo.take(USER, 'AWAIT_CATEGORY', 'n1', now)).toBe(state);
+    expect(deleteMany).toHaveBeenCalledWith(findFirst.mock.calls[0]?.[0]);
+    expect(await repo.take(USER, 'AWAIT_CATEGORY', 'n1', now)).toBeNull();
   });
 });

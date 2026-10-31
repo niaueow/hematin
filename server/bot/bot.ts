@@ -1,29 +1,48 @@
 import { randomBytes } from 'node:crypto';
 import { Bot, Composer, type Context } from 'grammy';
 import type { UserFromGetMe } from 'grammy/types';
+import { createBudgetService } from '../budget/service.js';
 import type { User } from '../db/generated/client.js';
+import type { AliasRepo } from '../db/repos/aliasRepo.js';
+import type { CategoryRepo } from '../db/repos/categoryRepo.js';
+import type { ChatStateRepo } from '../db/repos/chatStateRepo.js';
+import type { IntentRepo } from '../db/repos/intentRepo.js';
 import type { InviteRepo } from '../db/repos/inviteRepo.js';
 import type { ProcessedUpdateRepo } from '../db/repos/processedUpdateRepo.js';
 import type { RateLimitRepo } from '../db/repos/rateLimitRepo.js';
+import type { TxRepo } from '../db/repos/txRepo.js';
 import type { UserRepo } from '../db/repos/userRepo.js';
 import { hitRateLimit, MESSAGES_PER_MINUTE } from '../lib/rateLimit.js';
 import { sha256Hex } from '../lib/secrets.js';
 import * as copy from './copy.js';
-import { isBlockedError } from './telegram.js';
+import { createFlows, type CallbackResult, type MessageInput, type Reply } from './flows.js';
+import { ignoreNotModified, isBlockedError } from './telegram.js';
 
 // The grammY bot (ARCHITECTURE §3.1). Middleware order:
 //   1. idempotency (ProcessedUpdate)  2. private chats only  3. resolve user (strangers stop here)
-//   4. rate limit (known users)       5. handlers
+//   4. rate limit (known users)       5. income nudge (after the handler)  6. handlers (logic in flows.ts)
 // Strangers (unknown or disabled users) get exactly one canned reply and cause no DB writes besides the
 // ProcessedUpdate row, except the two ways in: the one-time owner bootstrap and a valid invite (SECURITY §2).
 
-export type BotContext = Context & { user?: User };
+export type BotContext = Context & {
+  user?: User;
+  /** Set when a reply already asked for this month's income, so the nudge stays quiet. */
+  incomePrompted?: boolean;
+};
 
 export type BotRepos = {
   users: Pick<UserRepo, 'findByTelegramId' | 'ownerExists' | 'create' | 'setBotBlocked'>;
   invites: Pick<InviteRepo, 'create' | 'consume'>;
   processedUpdates: Pick<ProcessedUpdateRepo, 'markProcessed'>;
   rateLimits: Pick<RateLimitRepo, 'hit'>;
+  transactions: Pick<
+    TxRepo,
+    'create' | 'findById' | 'update' | 'softDelete' | 'latest' | 'listUpTo' | 'hasIncomeInRange'
+  >;
+  categories: Pick<CategoryRepo, 'listUsable' | 'findUsableById'>;
+  aliases: Pick<AliasRepo, 'listForUser' | 'upsert'>;
+  chatStates: Pick<ChatStateRepo, 'get' | 'set' | 'take' | 'clear'>;
+  intents: Pick<IntentRepo, 'sumSkipped'>;
 };
 
 export type BotDeps = {
@@ -34,6 +53,8 @@ export type BotDeps = {
   now: () => Date;
   random?: () => number;
   newInviteCode?: () => string;
+  /** Ties buttons to one pending question (keyboards.ts). */
+  newNonce?: () => string;
 };
 
 export const INVITE_TTL_HOURS = 48;
@@ -47,6 +68,14 @@ export function createBot(token: string, deps: BotDeps, botInfo?: UserFromGetMe)
   const bot = new Bot<BotContext>(token, botInfo ? { botInfo } : {});
   const { repos } = deps;
   const newInviteCode = deps.newInviteCode ?? (() => randomBytes(16).toString('base64url'));
+  const flows = createFlows({
+    repos,
+    transaction: deps.transaction,
+    budget: createBudgetService({ txRepo: repos.transactions, intentRepo: repos.intents }),
+    now: deps.now,
+    newNonce: deps.newNonce ?? (() => randomBytes(6).toString('base64url')),
+    random: deps.random,
+  });
   const app = new Composer<BotContext>();
 
   // 1. Idempotency: Telegram retries an update until it gets a 2xx. Seen before → ack and stop.
@@ -140,7 +169,16 @@ export function createBot(token: string, deps: BotDeps, botInfo?: UserFromGetMe)
     else if (result.justExceeded) await ctx.reply(copy.rateLimited(deps.random));
   });
 
-  // 5. Handlers.
+  // 5. Income nudge (PRD F12): once, on the first message of a month without income. It runs after the
+  // handler, so a message that records the income doesn't get it.
+  app.use(async (ctx, next) => {
+    await next();
+    if (!ctx.message) return;
+    const nudge = await flows.incomeNudge(userOf(ctx));
+    if (nudge && !ctx.incomePrompted) await send(ctx, nudge);
+  });
+
+  // 6. Handlers.
   app.command('start', (ctx) => ctx.reply(copy.welcomeBack(userOf(ctx).firstName, deps.random)));
   app.command(['help', 'bantuan'], (ctx) => ctx.reply(copy.HELP));
 
@@ -158,11 +196,17 @@ export function createBot(token: string, deps: BotDeps, botInfo?: UserFromGetMe)
     });
   });
 
-  // BotFather's command list; implemented in later milestones.
-  app.command(['sisa', 'pemasukan', 'riwayat', 'undo', 'kategori', 'dashboard'], (ctx) => ctx.reply(copy.COMING_SOON));
+  app.command('sisa', async (ctx) => send(ctx, await flows.sisa(userOf(ctx))));
+  app.command('pemasukan', async (ctx) => send(ctx, await flows.pemasukan(userOf(ctx), ctx.match, input(ctx))));
+  app.command('riwayat', async (ctx) => send(ctx, await flows.riwayat(userOf(ctx))));
+  app.command('undo', async (ctx) => send(ctx, await flows.undo(userOf(ctx))));
+  app.command('kategori', async (ctx) => send(ctx, await flows.kategori(userOf(ctx))));
+  app.command('dashboard', (ctx) => ctx.reply(copy.COMING_SOON)); // TODO(Phase 2): magic link
   app.on('message:entities:bot_command', (ctx) => ctx.reply(copy.HELP));
-  // TODO(M5): the NLP pipeline (log expense / income / saving, "mau X").
-  app.on('message:text', (ctx) => ctx.reply(copy.LOGGING_COMING_SOON));
+  app.on('message:text', async (ctx) => send(ctx, await flows.onText(userOf(ctx), input(ctx))));
+  app.on('callback_query:data', async (ctx) =>
+    applyCallback(ctx, await flows.onCallback(userOf(ctx), ctx.callbackQuery.data)),
+  );
   app.on('callback_query', (ctx) => ctx.answerCallbackQuery());
 
   // A user who blocked the bot can't be replied to. reportBlocked (telegram.ts) has marked them; don't fail
@@ -177,4 +221,26 @@ export function createBot(token: string, deps: BotDeps, botInfo?: UserFromGetMe)
 function userOf(ctx: BotContext): User {
   if (!ctx.user) throw new Error('bot: handler reached without a resolved user');
   return ctx.user;
+}
+
+/** The message as the pipeline sees it. occurredAt is when it was sent, not when we got it. */
+function input(ctx: BotContext): MessageInput {
+  const message = ctx.message as NonNullable<BotContext['message']>;
+  const text = message.text ?? '';
+  return { text, rawText: text, occurredAt: new Date(message.date * 1000) };
+}
+
+async function send(ctx: BotContext, reply: Reply) {
+  if (reply.asksIncome) ctx.incomePrompted = true;
+  await ctx.reply(reply.text, reply.keyboard ? { reply_markup: reply.keyboard } : {});
+}
+
+async function applyCallback(ctx: BotContext, result: CallbackResult) {
+  await ctx.answerCallbackQuery(result.toast ? { text: result.toast } : {});
+  if (result.edit) {
+    const { text, keyboard } = result.edit;
+    await ignoreNotModified(ctx.editMessageText(text, keyboard ? { reply_markup: keyboard } : {}));
+  }
+  if (result.markup) await ignoreNotModified(ctx.editMessageReplyMarkup({ reply_markup: result.markup }));
+  if (result.reply) await send(ctx, result.reply);
 }

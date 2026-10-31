@@ -25,7 +25,12 @@ Checked against the Prisma 7 docs on 2026-10-31. Differences from the draft belo
 
 Unchanged from the draft and worth knowing: `PurchaseIntent.categoryId` and `ChatState.userId` have **no foreign key** (no relation is declared). Required relations use Prisma's default `ON DELETE RESTRICT`, so account deletion (P1) must delete child rows first.
 
-Repositories (`server/db/repos/*Repo.ts`) are factories, `createTxRepo(db)` etc., taking the client or a transaction client. Every function on user data takes `userId` first and puts it in `where` (`tests/db/repoScoping.test.ts` checks this for tx, intent, category, and alias repos). A few functions are deliberately not user-scoped: token/invite lookups by hash (they're how the user is found), housekeeping deletes, and `categoryRepo.listSystem`.
+Repositories (`server/db/repos/*Repo.ts`) are factories, `createTxRepo(db)` etc., taking the client or a transaction client. Every function on user data takes `userId` first and puts it in `where` (`tests/db/repoScoping.test.ts` checks this for tx, intent, category, alias, and chat-state repos). A few functions are deliberately not user-scoped: token/invite lookups by hash (they're how the user is found), housekeeping deletes, and `categoryRepo.listSystem`.
+
+Implementation notes (M5, the bot's logging loop, BOT_SPEC §3.5):
+- **`ChatState.payload`** always has a `nonce` that is also in the question's button data. `chatStateRepo.take(userId, kind, nonce, now)` claims the state with a conditional delete (`payload.nonce` matched by a JSON path filter), so of two taps only one gets it. Payloads: `AWAIT_AMOUNT` / `CONFIRM_AMOUNT` `{ nonce, base, rawText, occurredAt, candidate? }`; `AWAIT_CATEGORY` `{ nonce, amount, item, rawText, occurredAt }`. They're validated with Zod when read back.
+- **`RateLimit`** also holds `income-nudge:<userId>:<YYYY-MM>` (expires at the end of that WIB month): its first hit is "the first message of a month without income" (PRD F12).
+- **`txRepo.findById` and `latest`** include the category (bot replies show its name).
 
 ## Draft schema
 

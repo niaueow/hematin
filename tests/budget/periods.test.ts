@@ -16,6 +16,7 @@ import {
   remainingDays,
   segmentOf,
   segmentsOfMonth,
+  startOfDayWib,
   toLocalDate,
   todayWib,
   weekOf,
@@ -163,6 +164,13 @@ describe('calendar helpers', () => {
     expect(addDays(parseLocalDate('2028-02-28'), 1)).toBe('2028-02-29');
     expect(daysBetween(parseLocalDate('2026-11-30'), parseLocalDate('2026-11-01'))).toBe(-29);
     expect(monthOf(parseLocalDate('2026-11-30'))).toBe('2026-11');
+  });
+
+  it('startOfDayWib is 00:00 WIB (17:00 UTC the day before)', () => {
+    const start = startOfDayWib(parseLocalDate('2026-12-01'));
+    expect(start.toISOString()).toBe('2026-11-30T17:00:00.000Z');
+    expect(toLocalDate(start)).toBe('2026-12-01');
+    expect(toLocalDate(new Date(start.getTime() - 1))).toBe('2026-11-30');
   });
 
   it('todayWib and noonWib', () => {

@@ -16,7 +16,9 @@ export type NewTransaction = {
   parseMethod: ParseMethod;
 };
 
-export type TransactionPatch = Partial<Pick<NewTransaction, 'type' | 'amount' | 'categoryId' | 'note' | 'occurredAt'>>;
+export type TransactionPatch = Partial<
+  Pick<NewTransaction, 'type' | 'amount' | 'categoryId' | 'note' | 'occurredAt' | 'parseMethod'>
+>;
 
 export type TransactionFilter = {
   from?: LocalDate;
@@ -42,8 +44,9 @@ export function createTxRepo(db: Db) {
       });
     },
 
+    /** With its category, for bot replies ("Makan Rp10.000"). */
     findById(userId: string, id: string) {
-      return db.transaction.findFirst({ where: { id, userId, ...live } });
+      return db.transaction.findFirst({ where: { id, userId, ...live }, include: { category: true } });
     },
 
     /** Budget input: all live transactions with localDate in [from, to]. */
@@ -78,10 +81,11 @@ export function createTxRepo(db: Db) {
       });
     },
 
-    /** /riwayat and /undo: most recently created first. */
+    /** /riwayat and /undo: most recently created first, with each category. */
     latest(userId: string, limit: number, createdSince?: Date) {
       return db.transaction.findMany({
         where: { userId, ...live, ...(createdSince && { createdAt: { gte: createdSince } }) },
+        include: { category: true },
         orderBy: { createdAt: 'desc' },
         take: limit,
       });

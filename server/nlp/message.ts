@@ -1,5 +1,5 @@
 import { amountTexts, parseAmount, type AmountResult } from './amount.js';
-import { categorize, type CategorizeContext, type Categorized } from './categorize.js';
+import { categorize, onlyFillers, type CategorizeContext, type Categorized } from './categorize.js';
 import { bucketsFor, detectIntent, refineIntent, type Intent } from './intent.js';
 import { normalize } from './text.js';
 
@@ -23,4 +23,13 @@ export function parseMessage(text: string, context: Omit<CategorizeContext, 'buc
     intent: refineIntent(detected, categorized.category?.bucket ?? null),
     ...categorized,
   };
+}
+
+/**
+ * An answer to "Berapa duitnya?": exactly one amount and nothing else but filler words ("15rb", "15rb aja").
+ * Anything more ("gojek 18k") is a new message.
+ */
+export function isAmountOnly(text: string): boolean {
+  const texts = amountTexts(parseAmount(normalize(text)));
+  return texts.length === 1 && onlyFillers(text, texts);
 }

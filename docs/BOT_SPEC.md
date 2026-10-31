@@ -23,7 +23,7 @@ Implementation notes (M4):
 - **Strangers** (unknown or DISABLED users) get the canned reply to every message. Their button presses are only acknowledged.
 - **`/start <code>`** from someone already registered is a normal welcome back; the invite stays unused. An invalid, used or expired code gets `INVITE_INVALID`.
 - **Owner bootstrap** happens only on `/start`, and only while no OWNER exists.
-- **Commands from the BotFather list** that later milestones build (`/sisa`, `/pemasukan`, `/riwayat`, `/undo`, `/kategori`, `/dashboard`) reply "lagi disiapin". Unknown commands get the help. Plain text gets a placeholder until logging (M5).
+- **Commands from the BotFather list** that later milestones build (`/dashboard`) reply "lagi disiapin". Unknown commands get the help. Since M5, `/sisa`, `/pemasukan`, `/riwayat`, `/undo` and `/kategori` work (§3.5).
 - **Rate limit:** the 21st message within a minute gets one warning; later ones in that minute are ignored.
 - **Blocked bot:** a user who blocked the bot is marked `botBlocked` on the 403, and unmarked the next time they write.
 
@@ -59,7 +59,7 @@ Rules:
 | Intent | Trigger examples |
 |---|---|
 | `ASK_PURCHASE` | starts with or contains: `mau`, `pengen`, `pingin`, `boleh ga`, `boleh gak`, `bolehkah`, `kalo beli` |
-| `LOG_INCOME` | `uang jajan`, `uang saku`, `dapet`, `dikasih`, `gajian`, `transfer dari` |
+| `LOG_INCOME` | `uang jajan`, `uang saku`, `dapet`, `dikasih`, `gajian`, `transfer dari`, `pemasukan` (M5: also how `/pemasukan 2jt` is parsed) |
 | `LOG_SAVING` | category resolves to the SAVINGS bucket (reksadana, nabung, emas…) |
 | `LOG_EXPENSE` | default when an amount is present |
 | `UNKNOWN` | no amount and no command → short help reply |
@@ -158,6 +158,28 @@ Jatah jajan minggu ini: Rp140.000 (Rp20.000/hari)
 
 ### 3.4 Saving
 `"reksadana 200k"` → record SAVING → `🐷 Nabung Rp200.000! Tabungan bulan ini 50% dari target (Rp200.000/Rp400.000).`
+
+### 3.5 Implementation notes (M5, the logging loop)
+
+Code: `server/bot/flows.ts` (logic), `keyboards.ts` (buttons), `copy.ts` (text). Tests: `tests/bot/logging.test.ts`.
+
+- **Recording.** `occurredAt` = when the message was sent (Telegram's `date`), `localDate` = its WIB date, `source` BOT, `parseMethod` from categorize (`USER_PICK` for a button pick or a category change), `rawText` = the message as typed, `note` = the item. Income without a category gets parseMethod `RULE` (the trigger word matched).
+- **Replies** use §3.1/§3.3/§3.4 with today's numbers from the budget service. A remaining amount that's negative is shown as negative (`-Rp10.000`). The over-budget line is the neutral one from §3.1: wants when `remainingWeek < 0`, needs when the month's `remainingMonth < 0`. In a `NO_BUDGET` month the second line says the budget can't be computed yet.
+- **Buttons** (callback data ≤ 64 bytes, see `keyboards.ts`): every log reply has `[✏️ Ganti kategori] [↩️ Undo]`.
+  - *Ganti kategori* swaps the buttons for the categories the transaction can have, plus `Batal`. Expenses and savings can move between NEEDS, WANTS and SAVINGS (moving to SAVINGS makes it a SAVING, and back). Income only offers income categories. The pick updates the transaction, sets parseMethod `USER_PICK`, upserts the alias `note → category`, and rewrites the reply with the new numbers.
+  - *Undo*, `/undo` and the 🗑 buttons of `/riwayat` all send the same confirmation, "Hapus catatan ini?" with `[🗑 Ya, hapus] [Batal]`. Only "Ya, hapus" soft-deletes. `/undo` offers the most recent transaction created in the last 24 h; the buttons work on any of the user's live transactions.
+  - Every button loads its record again, scoped to whoever pressed it. Another user's id finds nothing: the press is only answered ("Catatan ini udah ga ada"), nothing changes.
+- **Pending questions** (`ChatState`, one per user, 10 minutes):
+  - *Missing amount* (`AWAIT_AMOUNT`): asked when a category matched or it's income (`warteg`, `dapet uang jajan`); otherwise the short help. The next message completes it only if it's just an amount (filler words allowed: `10rb aja`); anything else is handled as a new message and replaces the question.
+  - *Ambiguous small amount* (`CONFIRM_AMOUNT`, `kopi 20`): `Maksudnya Rp20.000?` with `[✅ Iya, Rp20.000] [❌ Bukan]`. Typing an amount instead works too.
+  - *No category* (`AWAIT_CATEGORY`): buttons for every NEEDS, WANTS and SAVINGS category (the pick decides EXPENSE vs SAVING) plus `Batal`. Income isn't offered: it's recognized by its trigger words. The pick records `USER_PICK` and upserts the alias `item → category`.
+  - Buttons carry a nonce of their question. Claiming the question deletes it, so an old keyboard, a second tap, or another user's press does nothing ("Udah kadaluarsa, ketik ulang aja ya").
+- **Rejected amounts.** More than one amount → "satu-satu ya". Out of range (≤ 0 or > Rp100.000.000) → "kayaknya salah ketik", nothing recorded; the user types it again.
+- **`ASK_PURCHASE`** replies "lagi disiapin" until M6 and records nothing.
+- **`/sisa`**: wants this week and month, the daily pace (or how far over it is), needs this week and month, savings recorded + bonus vs target. 5 lines. In a `NO_BUDGET` month it shows the §5 NO_BUDGET text.
+- **`/riwayat`** lists the last 10 (newest first) with one 🗑 button each. It's the one reply allowed past 5 lines.
+- **Income nudge (PRD F12).** On the first message of a month that has no income, the bot adds one message asking for it (phrased conditionally, like the monthly reminder). "First" is claimed with a `RateLimit` row `income-nudge:<userId>:<YYYY-MM>` that expires when the month ends. A message that records income doesn't get it, and neither does a reply that already asks for income (`/sisa` in a `NO_BUDGET` month, "Berapa duitnya?" for income).
+- **Groq (step 3)** is still a stub, so an unknown item goes straight to the category buttons.
 
 ## 4. Scheduled messages
 

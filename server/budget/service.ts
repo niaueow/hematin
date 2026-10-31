@@ -41,6 +41,11 @@ export function createBudgetService({ txRepo, intentRepo }: BudgetServiceDeps) {
   }
 
   return {
+    /** Today's numbers only (bot replies after logging). */
+    async snapshot(user: BudgetUser, now: Date): Promise<BudgetSnapshot> {
+      return snapshot(await engineInput(user, now));
+    },
+
     /** "/sisa" and GET /api/budget/current. */
     async current(
       user: BudgetUser,

@@ -41,6 +41,20 @@ export class BotBlockedError extends Error {
 
 export const isBlockedError = (err: unknown) => err instanceof GrammyError && err.error_code === 403;
 
+/**
+ * Edits that change nothing (pressing the same button twice) get "400: message is not modified". That's not a
+ * failure: ignore it, so the update doesn't end in a 500.
+ */
+export async function ignoreNotModified(edit: Promise<unknown>): Promise<void> {
+  try {
+    await edit;
+  } catch (err) {
+    if (err instanceof GrammyError && err.error_code === 400 && err.description.includes('message is not modified'))
+      return;
+    throw err;
+  }
+}
+
 export type SendText = (chatId: string, text: string) => Promise<void>;
 
 /** For cron jobs: send a plain message; a 403 becomes BotBlockedError. Install retryOn429 on `api` first. */

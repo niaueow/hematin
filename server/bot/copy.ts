@@ -1,7 +1,10 @@
 // ALL user-facing Indonesian strings live here (AGENTS.md rule 7). Tone: BOT_SPEC §5 (D-023).
 // ≤ 5 lines, ≤ 2 emoji, 2–3 variants per message type, picked at random so it doesn't feel robotic.
 // Messages are sent as plain text (no parse_mode), so user-provided names can't inject markup.
-// TODO(M5+): logging, /sisa, verdicts, daily reminder, recap.
+// TODO(M6+): verdicts, daily reminder, recap.
+
+import type { Bucket, BudgetSnapshot } from '../budget/engine.js';
+import { formatRupiah as rp } from '../lib/money.js';
 
 type Random = () => number;
 
@@ -88,10 +91,6 @@ export const rateLimited = (random?: Random) =>
 /** Commands from BotFather's list that later milestones implement. */
 export const COMING_SOON = 'Fitur ini lagi disiapin, sabar ya 🙏 Sementara cek /bantuan dulu.';
 
-/** Plain text before expense logging exists (M5). */
-export const LOGGING_COMING_SOON =
-  'Fitur catat pengeluaran lagi disiapin, bentar lagi bisa 🙏\nSementara cek /bantuan dulu ya.';
-
 // --- monthly income reminder (BOT_SPEC §4) -------------------------------------------------------
 
 /**
@@ -105,3 +104,210 @@ export const INCOME_REMINDER = [
 ] as const;
 
 export const incomeReminder = (random?: Random) => pick(INCOME_REMINDER, random);
+
+/** On the first message of a month that has no income yet (PRD F12). Conditional, like INCOME_REMINDER. */
+export const incomeNudge = (random?: Random) =>
+  pick(
+    [
+      'Btw, uang jajan bulan ini belum dicatat 👀\nKalau udah dapet, ketik misal "uang jajan 2jt" biar aku bisa ngitung budget-mu.',
+      'Psst, pemasukan bulan ini belum ada 📒\nKalau udah masuk, catat ya, misal "uang jajan 1,5jt". Belum dapet? Santai.',
+    ],
+    random,
+  );
+
+// --- shared formatting ---------------------------------------------------------------------------
+
+/** How a bucket is called in replies: "Makan Rp10.000 (pokok)". */
+export const BUCKET_LABEL: Readonly<Record<Bucket, string>> = {
+  NEEDS: 'pokok',
+  WANTS: 'jajan',
+  SAVINGS: 'nabung',
+  INCOME: 'pemasukan',
+};
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+/** "2026-10-31" → "31 Okt". Reads the WIB calendar date string; no clock or time zone involved. */
+export function formatDate(date: string): string {
+  const [, month, day] = date.split('-').map(Number) as [number, number, number];
+  return `${day} ${MONTHS[month - 1] ?? ''}`;
+}
+
+/** A segment's dates (always within one month): "2–8 Nov", or "1 Nov" for a one-day segment. */
+export function formatDayRange(start: string, end: string): string {
+  return start === end ? formatDate(start) : `${Number(start.slice(8))}–${formatDate(end)}`;
+}
+
+/** What replies need to know about a transaction. */
+export type TxSummary = {
+  type: 'INCOME' | 'EXPENSE' | 'SAVING';
+  amount: number;
+  categoryName: string | null;
+  note: string | null;
+  /** WIB date, "YYYY-MM-DD". */
+  localDate: string;
+};
+
+/** Its category name, or a word for its type (income may have no category). */
+function txLabel(tx: Pick<TxSummary, 'type' | 'categoryName'>): string {
+  if (tx.categoryName) return tx.categoryName;
+  return tx.type === 'INCOME' ? 'Pemasukan' : tx.type === 'SAVING' ? 'Nabung' : 'Pengeluaran';
+}
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/** "Makan Rp10.000 · warteg · 31 Okt". Income gets a "+". */
+export function describeTx(tx: TxSummary): string {
+  const amount = tx.type === 'INCOME' ? `+${rp(tx.amount)}` : rp(tx.amount);
+  const note = tx.note ? ` · ${clip(tx.note, 30)}` : '';
+  return `${txLabel(tx)} ${amount}${note} · ${formatDate(tx.localDate)}`;
+}
+
+// --- buttons -------------------------------------------------------------------------------------
+
+export const BUTTON = {
+  changeCategory: '✏️ Ganti kategori',
+  undo: '↩️ Undo',
+  confirmDelete: '🗑 Ya, hapus',
+  cancel: 'Batal',
+  amountYes: (amount: number) => `✅ Iya, ${rp(amount)}`,
+  amountNo: '❌ Bukan',
+  category: (name: string, bucket: Bucket) => `${name} · ${BUCKET_LABEL[bucket]}`,
+  historyDelete: (index: number, tx: TxSummary) => `🗑 ${index}. ${txLabel(tx)} ${rp(tx.amount)}`,
+} as const;
+
+// --- logging (BOT_SPEC §2, §3) -------------------------------------------------------------------
+
+/** A log without an amount ("warteg"). BOT_SPEC §2.1. */
+export const askAmount = (random?: Random) =>
+  pick(
+    ['Berapa duitnya? 🤔 Ketik nominalnya aja, misal "15k".', 'Berapa? Kirim nominalnya aja ya, misal "15rb".'],
+    random,
+  );
+
+/** No amount and nothing recognizable (BOT_SPEC §2.2 UNKNOWN). */
+export const SHORT_HELP =
+  'Hmm, aku ga nangkep 😅 Coba ketik "warteg 10k" atau "uang jajan 2jt".\nCara lengkap: /bantuan';
+
+export const ONE_AT_A_TIME =
+  'Ada lebih dari satu nominal nih 😅 Kirim satu-satu ya, misal "kopi 20k" dulu, terus "roti 15k".';
+
+export const amountOutOfRange = (amount: number) =>
+  `${rp(amount)}? Kayaknya salah ketik deh 😅\nAku cuma bisa catat Rp1 sampai Rp100.000.000. Ketik ulang ya.`;
+
+/** A bare number under 1.000 ("kopi 20"): does it mean thousands? (BOT_SPEC §2.1) */
+export const confirmAmount = (candidate: number) => `Maksudnya ${rp(candidate)}?`;
+
+export const AMOUNT_RETYPE = 'Oke, ketik ulang lengkap sama nominalnya ya, misal "kopi 20k".';
+
+/** No category found (BOT_SPEC §2.3 step 4). Messages are plain text, so the user's item is safe here. */
+export const pickCategory = (item: string, amount: number) =>
+  item === ''
+    ? `${rp(amount)} buat apa? Pilih kategorinya ya 🤔`
+    : `"${clip(item, 40)}" ${rp(amount)} masuk kategori apa? 🤔\nNanti aku inget buat berikutnya.`;
+
+export const PICK_CANCELLED = 'Oke, ga jadi dicatat.';
+
+/** An old or already-used button (pending questions last 10 minutes). */
+export const EXPIRED = 'Udah kadaluarsa, ketik ulang aja ya.';
+
+export const PURCHASE_COMING_SOON =
+  'Cek "mau X" (boleh beli atau nggak) lagi disiapin 🙏\nKalau udah kebeli, catat aja kayak biasa, misal "donat 35k".';
+
+const NO_BUDGET_LINE = 'Sisa budget belum bisa dihitung: uang jajan bulan ini belum dicatat.';
+
+/** BOT_SPEC §3.1: what was recorded, what's left this week, and one neutral line when over budget. */
+export function expenseLogged(category: { name: string; bucket: Bucket }, amount: number, snap: BudgetSnapshot) {
+  const lines = [`✅ Dicatat: ${category.name} ${rp(amount)} (${BUCKET_LABEL[category.bucket]})`];
+  if (snap.state === 'NO_BUDGET') lines.push(NO_BUDGET_LINE);
+  else if (category.bucket === 'WANTS') {
+    lines.push(`Sisa jajan minggu ini: ${rp(snap.wants.remainingWeek)}`);
+    if (snap.wants.remainingWeek < 0)
+      lines.push(`Jajan minggu ini lewat ${rp(-snap.wants.remainingWeek)}, nanti dipotong dari jatah minggu depan ya.`);
+  } else {
+    lines.push(`Sisa pokok minggu ini: ${rp(snap.needs.remainingWeek)}`);
+    if (snap.needs.remainingMonth < 0)
+      lines.push(`Pokok bulan ini udah lewat ${rp(-snap.needs.remainingMonth)}, pelan-pelan ya.`);
+  }
+  return lines.join('\n');
+}
+
+/** BOT_SPEC §3.3: the income and the month's new split. */
+export function incomeLogged(categoryName: string | null, amount: number, snap: BudgetSnapshot) {
+  const lines = [`💰 ${categoryName ?? 'Pemasukan'} ${rp(amount)} masuk!`];
+  if (snap.state === 'OK') {
+    const { needsMonth, wantsMonth, savingsTarget } = snap.month;
+    const { remainingWeek, dailyPace } = snap.wants;
+    lines.push(`Bulan ini: pokok ${rp(needsMonth)} · jajan ${rp(wantsMonth)} · nabung ${rp(savingsTarget)}`);
+    lines.push(`Jatah jajan minggu ini: ${rp(remainingWeek)}${remainingWeek > 0 ? ` (${rp(dailyPace)}/hari)` : ''}`);
+  }
+  return lines.join('\n');
+}
+
+/** BOT_SPEC §3.4: the saving and progress toward this month's target (recorded + bonus, BUDGET_RULES §7). */
+export function savingLogged(amount: number, snap: BudgetSnapshot) {
+  const { total, progressPct, target } = snap.savings;
+  if (snap.state === 'NO_BUDGET' || target === 0)
+    return `🐷 Nabung ${rp(amount)}! Target tabungan muncul setelah uang jajan bulan ini dicatat.`;
+  return `🐷 Nabung ${rp(amount)}! Tabungan bulan ini ${progressPct}% dari target (${rp(total)}/${rp(target)}).`;
+}
+
+// --- changing and deleting -----------------------------------------------------------------------
+
+export const PICK_NEW_CATEGORY = 'Pilih kategori yang bener';
+export const CATEGORY_CHANGED = 'Kategori diganti ✅';
+export const CATEGORY_UNAVAILABLE = 'Kategori itu ga bisa dipakai di sini.';
+export const TX_NOT_FOUND = 'Catatan ini udah ga ada.';
+
+export const confirmDelete = (tx: TxSummary) => `Hapus catatan ini?\n${describeTx(tx)}`;
+export const txDeleted = (tx: TxSummary) => `🗑 Dihapus: ${describeTx(tx)}`;
+export const DELETE_CANCELLED = 'Oke, ga jadi dihapus 👍';
+export const NOTHING_TO_UNDO = 'Ga ada catatan dalam 24 jam terakhir buat dibatalin.';
+
+// --- /sisa, /riwayat, /kategori (BOT_SPEC §1) ----------------------------------------------------
+
+/** The NO_BUDGET template (BOT_SPEC §5). */
+export const NO_BUDGET =
+  'Uang jajan bulan ini belum dicatat nih, jadi aku belum bisa ngitung 😅 Ketik dulu misal "uang jajan 2jt".';
+
+/** /sisa: remaining this week + this month per bucket, the wants daily pace, savings progress. */
+export function sisa(snap: BudgetSnapshot) {
+  const { wants, needs, savings, segment } = snap;
+  let pace = `${rp(wants.dailyPace)}/hari buat ${segment.remainingDays} hari lagi`;
+  if (wants.remainingWeek === 0) pace = 'Jatah jajan minggu ini udah abis.';
+  if (wants.remainingWeek < 0)
+    pace = `Jajan udah lewat ${rp(-wants.remainingWeek)}, jatah minggu depan kepotong segitu.`;
+  return [
+    `📊 Sisa budget minggu ini (${formatDayRange(segment.start, segment.end)})`,
+    `Jajan: ${rp(wants.remainingWeek)} · bulan ini ${rp(wants.remainingMonth)}`,
+    pace,
+    `Pokok: ${rp(needs.remainingWeek)} · bulan ini ${rp(needs.remainingMonth)}`,
+    `🐷 Tabungan: ${rp(savings.total)}/${rp(savings.target)} (${savings.progressPct}%)`,
+  ].join('\n');
+}
+
+/** /riwayat. A list, so it's the one reply allowed past 5 lines (one line per transaction). */
+export function history(txs: readonly TxSummary[]) {
+  return [
+    `📜 ${txs.length} catatan terakhir (🗑 buat hapus):`,
+    ...txs.map((tx, i) => `${i + 1}. ${describeTx(tx)}`),
+  ].join('\n');
+}
+
+export const HISTORY_EMPTY = 'Belum ada catatan. Coba ketik "warteg 10k".';
+
+const BUCKET_TITLE: Readonly<Record<Bucket, string>> = {
+  NEEDS: 'Pokok',
+  WANTS: 'Jajan',
+  SAVINGS: 'Nabung',
+  INCOME: 'Pemasukan',
+};
+
+/** /kategori: categories grouped by bucket. */
+export function categoryList(categories: readonly { name: string; bucket: Bucket }[]) {
+  const lines = (['NEEDS', 'WANTS', 'SAVINGS', 'INCOME'] as const)
+    .map((bucket) => ({ bucket, names: categories.filter((c) => c.bucket === bucket).map((c) => c.name) }))
+    .filter(({ names }) => names.length > 0)
+    .map(({ bucket, names }) => `${BUCKET_TITLE[bucket]}: ${names.join(', ')}`);
+  return ['📂 Kategori', ...lines].join('\n');
+}

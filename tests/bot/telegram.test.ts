@@ -1,6 +1,12 @@
 import { GrammyError, type Transformer } from 'grammy';
 import { describe, expect, it, vi } from 'vitest';
-import { BotBlockedError, createTelegramSender, reportBlocked, retryOn429 } from '@server/bot/telegram.js';
+import {
+  BotBlockedError,
+  createTelegramSender,
+  ignoreNotModified,
+  reportBlocked,
+  retryOn429,
+} from '@server/bot/telegram.js';
 
 type Res =
   | { ok: true; result: unknown }
@@ -80,5 +86,31 @@ describe('createTelegramSender (cron)', () => {
     await expect(createTelegramSender({ sendMessage: other })('1', 'x')).rejects.toBeInstanceOf(GrammyError);
     const network = vi.fn(() => Promise.reject(new Error('net')));
     await expect(createTelegramSender({ sendMessage: network })('1', 'x')).rejects.toThrow('net');
+  });
+});
+
+describe('ignoreNotModified', () => {
+  const apiError = (code: number, description: string) =>
+    new GrammyError(
+      'Call to editMessageText failed',
+      { ok: false, error_code: code, description },
+      'editMessageText',
+      {},
+    );
+
+  it('swallows "message is not modified" (the same button pressed twice)', async () => {
+    const notModified = apiError(
+      400,
+      'Bad Request: message is not modified: specified new message content is the same',
+    );
+    await expect(ignoreNotModified(Promise.reject(notModified))).resolves.toBeUndefined();
+    await expect(ignoreNotModified(Promise.resolve(true))).resolves.toBeUndefined();
+  });
+
+  it('rethrows everything else', async () => {
+    const notFound = apiError(400, 'Bad Request: message to edit not found');
+    await expect(ignoreNotModified(Promise.reject(notFound))).rejects.toBe(notFound);
+    await expect(ignoreNotModified(Promise.reject(apiError(403, 'Forbidden')))).rejects.toThrow();
+    await expect(ignoreNotModified(Promise.reject(new Error('net')))).rejects.toThrow('net');
   });
 });

@@ -4,7 +4,11 @@ import { createApp } from '../server/app.js';
 import { createBot, type BotRepos } from '../server/bot/bot.js';
 import { createTelegramSender, reportBlocked, retryOn429 } from '../server/bot/telegram.js';
 import { getPrisma, type Db } from '../server/db/prisma.js';
+import { createAliasRepo } from '../server/db/repos/aliasRepo.js';
+import { createCategoryRepo } from '../server/db/repos/categoryRepo.js';
+import { createChatStateRepo } from '../server/db/repos/chatStateRepo.js';
 import { createCronRunRepo } from '../server/db/repos/cronRunRepo.js';
+import { createIntentRepo } from '../server/db/repos/intentRepo.js';
 import { createInviteRepo } from '../server/db/repos/inviteRepo.js';
 import { createProcessedUpdateRepo } from '../server/db/repos/processedUpdateRepo.js';
 import { createRateLimitRepo } from '../server/db/repos/rateLimitRepo.js';
@@ -23,6 +27,11 @@ const botRepos = (db: Db): BotRepos => ({
   invites: createInviteRepo(db),
   processedUpdates: createProcessedUpdateRepo(db),
   rateLimits: createRateLimitRepo(db),
+  transactions: createTxRepo(db),
+  categories: createCategoryRepo(db),
+  aliases: createAliasRepo(db),
+  chatStates: createChatStateRepo(db),
+  intents: createIntentRepo(db),
 });
 
 const bot = createBot(env.TELEGRAM_BOT_TOKEN, {

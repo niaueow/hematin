@@ -67,6 +67,11 @@ export function noonWib(date: LocalDate): Date {
   return new Date(`${date}T12:00:00.000+07:00`);
 }
 
+/** The instant 00:00 WIB on a date (the start of that business day). */
+export function startOfDayWib(date: LocalDate): Date {
+  return new Date(`${date}T00:00:00.000+07:00`);
+}
+
 // --- calendar arithmetic -------------------------------------------------------------------------
 
 const utc = (date: LocalDate) => Date.parse(`${date}T00:00:00.000Z`);

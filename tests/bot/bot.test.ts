@@ -1,189 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { createBot, type BotRepos } from '@server/bot/bot.js';
 import * as copy from '@server/bot/copy.js';
 import type { User } from '@server/db/generated/client.js';
 import { sha256Hex } from '@server/lib/secrets.js';
+import { callback as press, FakeDb, makeUser, OWNER_ID, person, replies, setup, text } from './harness.js';
 
-// The real grammY bot, driven with handleUpdate. Telegram is a fake API (a transformer that records calls),
-// and the repos are an in-memory store whose transaction() rolls back on error, like Postgres would.
+// Access control (M4): idempotency, private chats, strangers, owner bootstrap, invites, rate limit.
+// The logging loop (M5) is in logging.test.ts.
 
-const OWNER_ID = 111;
-const BOT_INFO = {
-  id: 999,
-  is_bot: true,
-  first_name: 'Hematin',
-  username: 'hematin_bot',
-  can_join_groups: true,
-  can_read_all_group_messages: false,
-  supports_inline_queries: false,
-  can_connect_to_business: false,
-  has_main_web_app: false,
-};
+const callback = (from: { id: number; first_name: string }, chat?: { id: number; type: string }) =>
+  press(from, 'pi:1:buy', chat);
 
-type Invite = { codeHash: string; createdById: string; expiresAt: Date; usedAt: Date | null; usedById: string | null };
-
-class FakeDb {
-  users: User[] = [];
-  invites: Invite[] = [];
-  processed = new Set<string>();
-  rate = new Map<string, number>();
-  writes: string[] = [];
-
-  repos(): BotRepos {
-    return {
-      users: {
-        findByTelegramId: (telegramId: bigint) =>
-          Promise.resolve(this.users.find((u) => u.telegramId === telegramId) ?? null),
-        ownerExists: () => Promise.resolve(this.users.some((u) => u.role === 'OWNER')),
-        create: (data: {
-          telegramId: bigint;
-          telegramUsername?: string | null;
-          firstName?: string | null;
-          role: 'OWNER' | 'MEMBER';
-        }) => {
-          if (this.users.some((u) => u.telegramId === data.telegramId)) return Promise.reject(new Error('unique'));
-          const user = makeUser({ ...data, id: `u${this.users.length + 1}` });
-          this.users.push(user);
-          this.writes.push('user.create');
-          return Promise.resolve(user);
-        },
-        setBotBlocked: (id: string, botBlocked: boolean) => {
-          const user = this.users.find((u) => u.id === id);
-          if (user) user.botBlocked = botBlocked;
-          this.writes.push('user.setBotBlocked');
-          return Promise.resolve();
-        },
-      },
-      invites: {
-        create: (createdById: string, invite: { codeHash: string; expiresAt: Date }) => {
-          this.invites.push({ ...invite, createdById, usedAt: null, usedById: null });
-          this.writes.push('invite.create');
-          return Promise.resolve({});
-        },
-        consume: (codeHash: string, usedById: string, now: Date) => {
-          const invite = this.invites.find((i) => i.codeHash === codeHash && i.usedAt === null && i.expiresAt > now);
-          if (!invite) return Promise.resolve(false);
-          Object.assign(invite, { usedAt: now, usedById });
-          this.writes.push('invite.consume');
-          return Promise.resolve(true);
-        },
-      },
-      processedUpdates: {
-        markProcessed: (updateId: bigint) => {
-          if (this.processed.has(String(updateId))) return Promise.resolve(false);
-          this.processed.add(String(updateId));
-          this.writes.push('processedUpdate');
-          return Promise.resolve(true);
-        },
-      },
-      rateLimits: {
-        hit: (key: string) => {
-          const count = (this.rate.get(key) ?? 0) + 1;
-          this.rate.set(key, count);
-          this.writes.push('rateLimit');
-          return Promise.resolve(count);
-        },
-      },
-    } as unknown as BotRepos;
-  }
-
-  async transaction<T>(fn: (repos: BotRepos) => Promise<T>): Promise<T> {
-    const snapshot = structuredClone({ users: this.users, invites: this.invites, writes: this.writes });
-    try {
-      return await fn(this.repos());
-    } catch (err) {
-      Object.assign(this, snapshot);
-      throw err;
-    }
-  }
-}
-
-function makeUser(data: Partial<User> & { id: string; telegramId: bigint }): User {
-  return {
-    telegramUsername: null,
-    firstName: null,
-    role: 'MEMBER',
-    status: 'ACTIVE',
-    botBlocked: false,
-    needsPct: 50,
-    wantsPct: 30,
-    savingsPct: 20,
-    timezone: 'Asia/Jakarta',
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
-    ...data,
-  };
-}
-
-type Call = { method: string; payload: Record<string, unknown> };
-
-function setup(
-  options: { db?: FakeDb; ownerId?: number; now?: () => Date; apiError?: (method: string) => number | null } = {},
-) {
-  const db = options.db ?? new FakeDb();
-  const calls: Call[] = [];
-  let codes = 0;
-  const bot = createBot(
-    '123:TEST',
-    {
-      repos: db.repos(),
-      transaction: (fn) => db.transaction(fn),
-      ownerTelegramId: String(options.ownerId ?? OWNER_ID),
-      now: options.now ?? (() => new Date('2026-11-01T03:00:00.000Z')),
-      random: () => 0,
-      newInviteCode: () => `CODE_${String(++codes).padStart(16, '0')}`,
-    },
-    BOT_INFO as never,
-  );
-  bot.api.config.use((_prev, method, payload) => {
-    calls.push({ method, payload: payload });
-    const code = options.apiError?.(method) ?? null;
-    if (code !== null) return Promise.resolve({ ok: false, error_code: code, description: 'test error' } as never);
-    return Promise.resolve({
-      ok: true,
-      result: method === 'sendMessage' ? { message_id: 1, date: 0, chat: {} } : true,
-    } as never);
-  });
-  return { bot, db, calls, send: (update: object) => bot.handleUpdate(update as never) };
-}
-
-let nextId = 1;
-const person = (id: number, first_name = 'Nia') => ({ id, is_bot: false, first_name });
-function text(
-  from: { id: number; is_bot?: boolean; first_name: string },
-  body: string,
-  chat?: { id: number; type: string },
-) {
-  const command = /^\/\w+/.exec(body)?.[0];
-  return {
-    update_id: nextId++,
-    message: {
-      message_id: nextId,
-      date: 0,
-      chat: chat ?? { id: from.id, type: 'private' },
-      from,
-      text: body,
-      ...(command && { entities: [{ type: 'bot_command', offset: 0, length: command.length }] }),
-    },
-  };
-}
-function callback(from: { id: number; first_name: string }, chat?: { id: number; type: string }) {
-  return {
-    update_id: nextId++,
-    callback_query: {
-      id: `cb${nextId}`,
-      from,
-      chat_instance: 'x',
-      data: 'pi:1:buy',
-      message: { message_id: 1, date: 0, chat: chat ?? { id: from.id, type: 'private' } },
-    },
-  };
-}
-const replies = (calls: Call[]) => calls.filter((c) => c.method === 'sendMessage').map((c) => c.payload.text);
-
+/** The owner, registered, with this month's income recorded (so the income nudge stays out of the way). */
 async function withOwner() {
   const ctx = setup();
   await ctx.send(text(person(OWNER_ID, 'Bos'), '/start'));
+  ctx.db.seed('u1', 'INCOME', 2_000_000, '2026-11-01');
   ctx.calls.length = 0;
   ctx.db.writes.length = 0;
   return ctx;
@@ -210,7 +41,7 @@ describe('idempotency', () => {
 describe('private chats only', () => {
   it('in a group: one reply, then the bot leaves; nobody is looked up or created', async () => {
     const { send, calls, db } = setup();
-    await send(text(person(OWNER_ID), '/start', { id: -100, type: 'supergroup' }));
+    await send(text(person(OWNER_ID), '/start', { chat: { id: -100, type: 'supergroup' } }));
     expect(calls.map((c) => [c.method, c.payload.chat_id])).toEqual([
       ['sendMessage', -100],
       ['leaveChat', -100],
@@ -318,6 +149,7 @@ describe('/invite and /start <code>', () => {
     const ctx = await withOwner();
     const code = await inviteCode(ctx);
     await ctx.send(text(person(333, 'Rani'), `/start ${code}`));
+    ctx.db.seed('u2', 'INCOME', 1_000_000, '2026-11-01');
     ctx.calls.length = 0;
     await ctx.send(text(person(333, 'Rani'), '/invite'));
     expect(replies(ctx.calls)).toEqual([copy.INVITE_OWNER_ONLY]);
@@ -344,17 +176,12 @@ describe('/invite and /start <code>', () => {
   });
 
   it('an expired invite is rejected', async () => {
-    let now = new Date('2026-11-01T03:00:00.000Z');
-    const db = new FakeDb();
-    const ctx = setup({ db, now: () => now });
-    await ctx.send(text(person(OWNER_ID), '/start'));
-    await ctx.send(text(person(OWNER_ID), '/invite'));
-    const code = /start=([\w-]+)/.exec(String(replies(ctx.calls).at(-1)))?.[1] as string;
-    ctx.calls.length = 0;
-    now = new Date(now.getTime() + 48 * 3_600_000); // exactly at expiry: no longer valid
+    const ctx = await withOwner();
+    const code = await inviteCode(ctx);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 48 * 3_600_000); // exactly at expiry: no longer valid
     await ctx.send(text(person(555), `/start ${code}`));
     expect(replies(ctx.calls)).toEqual([copy.INVITE_INVALID]);
-    expect(db.users).toHaveLength(1);
+    expect(ctx.db.users).toHaveLength(1);
   });
 
   it.each([
@@ -381,10 +208,9 @@ describe('known users', () => {
   it.each([
     ['/help', copy.HELP],
     ['/bantuan', copy.HELP],
-    ['/sisa', copy.COMING_SOON],
     ['/dashboard', copy.COMING_SOON],
     ['/foo', copy.HELP],
-    ['warteg 10k', copy.LOGGING_COMING_SOON],
+    ['halo', copy.SHORT_HELP],
   ])('%s → reply', async (body, expected) => {
     const ctx = await withOwner();
     await ctx.send(text(person(OWNER_ID, 'Bos'), body));
@@ -408,23 +234,20 @@ describe('known users', () => {
 describe('rate limit: 20 messages per minute', () => {
   it('the 21st message gets one warning, later ones are ignored', async () => {
     const ctx = await withOwner();
-    for (let i = 0; i < 22; i++) await ctx.send(text(person(OWNER_ID), `halo ${i}`));
+    for (let i = 0; i < 22; i++) await ctx.send(text(person(OWNER_ID), 'halo'));
     const sent = replies(ctx.calls);
     expect(sent).toHaveLength(21);
-    expect(sent.slice(0, 20).every((r) => r === copy.LOGGING_COMING_SOON)).toBe(true);
+    expect(sent.slice(0, 20).every((r) => r === copy.SHORT_HELP)).toBe(true);
     expect(sent[20]).toBe(copy.rateLimited(() => 0));
   });
 
   it('a new minute starts a new window', async () => {
-    let now = new Date('2026-11-01T03:00:00.000Z');
-    const db = new FakeDb();
-    const ctx = setup({ db, now: () => now });
-    await ctx.send(text(person(OWNER_ID), '/start'));
+    const ctx = await withOwner();
     for (let i = 0; i < 21; i++) await ctx.send(text(person(OWNER_ID), 'x'));
     ctx.calls.length = 0;
-    now = new Date(now.getTime() + 60_000);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 60_000);
     await ctx.send(text(person(OWNER_ID), 'x'));
-    expect(replies(ctx.calls)).toEqual([copy.LOGGING_COMING_SOON]);
+    expect(replies(ctx.calls)).toEqual([copy.SHORT_HELP]);
   });
 });
 

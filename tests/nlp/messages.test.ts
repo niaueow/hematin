@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AmountResult } from '@server/nlp/amount.js';
 import { DEFAULT_CATEGORIES } from '@server/nlp/keywords.js';
-import { parseMessage } from '@server/nlp/message.js';
+import { isAmountOnly, parseMessage } from '@server/nlp/message.js';
 
 // Real-looking Indonesian chat messages through the whole deterministic pipeline (BOT_SPEC §2).
 // amount: a number, or the error code. category: slug or null (→ Groq in M4, then ask the user).
@@ -106,5 +106,30 @@ describe('parseMessage: real-looking messages', () => {
     });
     expect(r).toMatchObject({ parseMethod: 'ALIAS', intent: 'LOG_EXPENSE', item: 'indomaret' });
     expect(r.category?.slug).toBe('belanja-bulanan');
+  });
+});
+
+describe('isAmountOnly: an answer to "Berapa duitnya?"', () => {
+  it.each([
+    ['10k', true],
+    ['10rb aja', true],
+    ['Rp 15.000', true],
+    ['20', true], // still needs the "Maksudnya Rp20.000?" confirmation afterwards
+    ['goceng dong', true],
+    ['gojek 18k', false],
+    ['10k sama 5k', false],
+    ['halo', false],
+    ['', false],
+  ])('%j → %s', (text, expected) => {
+    expect(isAmountOnly(text)).toBe(expected);
+  });
+
+  it('"pemasukan" is an income trigger (what /pemasukan 2jt is parsed as) and not the item', () => {
+    expect(parseMessage('pemasukan dari papa 2jt', ctx)).toMatchObject({
+      intent: 'LOG_INCOME',
+      amount: { amount: 2_000_000 },
+      category: null,
+      item: 'papa',
+    });
   });
 });

@@ -7,7 +7,15 @@ import { containsPhrase, normalize } from './text.js';
 export type Intent = 'ASK_PURCHASE' | 'LOG_INCOME' | 'LOG_SAVING' | 'LOG_EXPENSE' | 'UNKNOWN';
 
 export const PURCHASE_TRIGGERS = ['mau', 'pengen', 'pingin', 'boleh ga', 'boleh gak', 'bolehkah', 'kalo beli'] as const;
-export const INCOME_TRIGGERS = ['uang jajan', 'uang saku', 'dapet', 'dikasih', 'gajian', 'transfer dari'] as const;
+export const INCOME_TRIGGERS = [
+  'uang jajan',
+  'uang saku',
+  'dapet',
+  'dikasih',
+  'gajian',
+  'transfer dari',
+  'pemasukan', // also what /pemasukan <nominal> is parsed as
+] as const;
 
 const hasAny = (text: string, phrases: readonly string[]) => phrases.some((p) => containsPhrase(text, p));
 

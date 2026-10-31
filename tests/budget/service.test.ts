@@ -62,6 +62,14 @@ describe('budget service', () => {
     expect(recap.wants).toMatchObject({ allocationAfterDebt: 110_000, spent: 50_000 });
   });
 
+  it('snapshot: today’s numbers without the skipped-purchase stats', async () => {
+    const { deps: d, listUpTo, sumSkipped } = deps(history);
+    const snap = await createBudgetService(d).snapshot(user, now);
+    expect(listUpTo).toHaveBeenCalledWith('user_A', '2026-11-11');
+    expect(sumSkipped).not.toHaveBeenCalled();
+    expect(snap.wants).toMatchObject({ remainingWeek: 60_000, remainingMonth: 360_000 });
+  });
+
   it('income rows without a category map to bucket null', async () => {
     const result = await createBudgetService(deps(history).deps).current(user, now);
     expect(result.state).toBe('OK');
