@@ -1,4 +1,4 @@
-import { createBot, type BotRepos } from '@server/bot/bot.js';
+import { createBot, type BotDeps, type BotRepos } from '@server/bot/bot.js';
 import { localDateFromDb, localDateToDb, toLocalDate, type LocalDate } from '@server/budget/periods.js';
 import type { Category, KeywordAlias, PurchaseIntent, Transaction, User } from '@server/db/generated/client.js';
 import type { ChatStateKind } from '@server/db/repos/chatStateRepo.js';
@@ -374,6 +374,7 @@ export function setup(
     now?: Date;
     /** Picks copy variants; 0 → always the first. */
     random?: () => number;
+    llm?: BotDeps['llm'];
     apiError?: (method: string) => number | null;
   } = {},
 ) {
@@ -393,6 +394,7 @@ export function setup(
       random: options.random ?? (() => 0),
       newInviteCode: () => `CODE_${String(++codes).padStart(16, '0')}`,
       newNonce: () => `n${++nonces}`,
+      ...(options.llm && { llm: options.llm }),
     },
     BOT_INFO as never,
   );
@@ -435,14 +437,19 @@ export const lastCall = (calls: Call[], method: string) => calls.filter((c) => c
 export const MON = new Date('2026-11-02T03:00:00.000Z');
 
 /** Two registered users: A (u1, owner, Telegram 111) and B (u2, 222). `income` records A's 2.000.000 on 1 Nov. */
-export function world(options: { now?: Date; income?: boolean; random?: () => number } = {}) {
+export function world(options: { now?: Date; income?: boolean; random?: () => number; llm?: BotDeps['llm'] } = {}) {
   const db = new FakeDb();
   db.users.push(
     makeUser({ id: 'u1', telegramId: 111n, role: 'OWNER', firstName: 'Nia' }),
     makeUser({ id: 'u2', telegramId: 222n, firstName: 'Rani' }),
   );
   if (options.income) db.seed('u1', 'INCOME', 2_000_000, '2026-11-01', 'sys_uang_jajan');
-  const ctx = setup({ db, now: options.now ?? MON, ...(options.random && { random: options.random }) });
+  const ctx = setup({
+    db,
+    now: options.now ?? MON,
+    ...(options.random && { random: options.random }),
+    ...(options.llm && { llm: options.llm }),
+  });
   const clear = () => {
     ctx.calls.length = 0;
   };

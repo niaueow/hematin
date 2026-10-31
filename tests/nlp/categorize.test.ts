@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { categorize, categorizeWithLlm, extractItem } from '@server/nlp/categorize.js';
+import { categorize, extractItem } from '@server/nlp/categorize.js';
 import { DEFAULT_CATEGORIES, longestKeywordMatch, type NlpCategory } from '@server/nlp/keywords.js';
 
 const own: NlpCategory = { id: 'cat_kucing', slug: 'kucing', name: 'Kucing', bucket: 'NEEDS', keywords: [] };
@@ -75,9 +75,8 @@ describe('step 2: default keywords, longest first, whole words', () => {
   });
 });
 
-describe('steps 3–4: stubs', () => {
-  it('Groq is a stub: no category, so the bot will ask the user', () => {
-    expect(categorizeWithLlm()).toEqual({ category: null, parseMethod: null });
+describe('steps 3–4', () => {
+  it('no rule or alias hit: no category yet (the bot tries Groq, then asks)', () => {
     expect(categorize('indomaret 30k', ctx(), ['30k'])).toEqual({
       category: null,
       parseMethod: null,

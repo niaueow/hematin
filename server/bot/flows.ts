@@ -16,7 +16,10 @@ import {
 import type { BudgetService } from '../budget/service.js';
 import type { Category, ParseMethod, Transaction, User } from '../db/generated/client.js';
 import type { ChatStateKind } from '../db/repos/chatStateRepo.js';
-import { isAmountOnly, parseMessage } from '../nlp/message.js';
+import { hitDailyQuota } from '../lib/rateLimit.js';
+import type { LlmCategory, LlmResult } from '../nlp/groq.js';
+import { bucketsFor, refineIntent } from '../nlp/intent.js';
+import { isAmountOnly, parseMessage, type ParsedMessage } from '../nlp/message.js';
 import { normalize } from '../nlp/text.js';
 import type { BotRepos } from './bot.js';
 import * as copy from './copy.js';
@@ -39,6 +42,13 @@ export type CallbackResult = { toast?: string; edit?: Reply; markup?: InlineKeyb
 
 export type MessageInput = { text: string; rawText: string; occurredAt: Date };
 
+/** Categorize step 3 (nlp/groq.ts). Never throws: failures are results. */
+export type Classify = (normalizedText: string, categories: readonly LlmCategory[]) => Promise<LlmResult>;
+
+/** The one log line per LLM attempt. Never the message text (step 6 of M7, SECURITY §1). */
+export type LlmLog = { parseMethod: 'LLM' | 'USER_PICK'; outcome: 'ok' | LlmFailure | 'QUOTA'; latencyMs: number };
+type LlmFailure = Extract<LlmResult, { ok: false }>['reason'];
+
 export type FlowDeps = {
   repos: BotRepos;
   transaction: <T>(fn: (repos: BotRepos) => Promise<T>) => Promise<T>;
@@ -46,6 +56,8 @@ export type FlowDeps = {
   now: () => Date;
   newNonce: () => string;
   random?: () => number;
+  /** Without it, step 3 is skipped and an unknown item goes straight to the category buttons. */
+  llm?: { classify: Classify; dailyLimit: number; log: (entry: LlmLog) => void };
 };
 
 /** Pending questions ("Berapa duitnya?", "Maksudnya Rp20.000?", category buttons) last 10 minutes. */
@@ -140,11 +152,12 @@ export function createFlows(deps: FlowDeps) {
   /** BOT_SPEC §3.1 / §3.3 / §3.4, with today's numbers. */
   async function logReply(
     user: User,
-    tx: { id: string; type: TxType; amount: number },
+    tx: { id: string; type: TxType; amount: number; parseMethod?: ParseMethod },
     category: Pick<Category, 'name' | 'bucket'> | null,
   ): Promise<Reply> {
     const snap = await deps.budget.snapshot(user, deps.now());
-    const keyboard = kb.txKeyboard(tx.id);
+    // An LLM pick gets a 👍 to confirm it (learned as an alias), next to ✏️ to correct it.
+    const keyboard = kb.txKeyboard(tx.id, { confirm: tx.parseMethod === 'LLM' });
     if (tx.type === 'INCOME') return { text: copy.incomeLogged(category?.name ?? null, tx.amount, snap), keyboard };
     if (tx.type === 'SAVING') return { text: copy.savingLogged(tx.amount, snap), keyboard };
     if (!category) throw new Error('bot: an expense without a category'); // DATA_MODEL invariant
@@ -166,9 +179,37 @@ export function createFlows(deps: FlowDeps) {
   }
 
   /** The pipeline (BOT_SPEC §2) and what to do with its result. */
+  /**
+   * Step 3 (BOT_SPEC §2.4): only for a message that has an amount but no rule or alias hit. Within the user's
+   * daily quota; any failure leaves the category empty, so step 4 asks the user. Logging never waits on Groq.
+   */
+  async function withLlm(user: User, parsed: ParsedMessage, categories: readonly Category[]): Promise<ParsedMessage> {
+    const { llm } = deps;
+    const wanted = parsed.intent === 'LOG_EXPENSE' || parsed.intent === 'ASK_PURCHASE';
+    if (!llm || parsed.category || !wanted || !('amount' in parsed.amount)) return parsed;
+    // Income is recognized by its trigger words, never guessed.
+    const buckets: readonly Bucket[] = bucketsFor(parsed.intent).filter((b) => b !== 'INCOME');
+    const allowed = categories.filter((c) => buckets.includes(c.bucket));
+    const quota = await hitDailyQuota(repos.rateLimits, 'llm', user.id, llm.dailyLimit, deps.now());
+    if (!quota.allowed) {
+      llm.log({ parseMethod: 'USER_PICK', outcome: 'QUOTA', latencyMs: 0 });
+      return parsed;
+    }
+    const started = performance.now();
+    // classify() never throws by contract; this catch keeps a broken one from blocking the log anyway.
+    const result: LlmResult = await llm
+      .classify(parsed.normalized, allowed)
+      .catch(() => ({ ok: false, reason: 'NETWORK' }) as const);
+    const latencyMs = Math.round(performance.now() - started);
+    const category = result.ok ? allowed.find((c) => c.slug === result.slug) : undefined;
+    llm.log({ parseMethod: category ? 'LLM' : 'USER_PICK', outcome: result.ok ? 'ok' : result.reason, latencyMs });
+    if (!category) return parsed;
+    return { ...parsed, category, parseMethod: 'LLM', intent: refineIntent(parsed.intent, category.bucket) };
+  }
+
   async function processText(user: User, input: MessageInput): Promise<Reply> {
     const context = await nlpContext(user.id);
-    const parsed = parseMessage(input.text, context);
+    const parsed = await withLlm(user, parseMessage(input.text, context), context.categories);
     const { amount, category, intent, item } = parsed;
     const origin = { rawText: input.rawText, occurredAt: input.occurredAt.toISOString() };
 
@@ -409,6 +450,12 @@ export function createFlows(deps: FlowDeps) {
       }
       case 'back':
         return { markup: kb.txKeyboard(tx.id) };
+      case 'ok': {
+        // 👍 on an LLM pick: learn it, so the same item skips the LLM next time.
+        const keyword = normalize(tx.note ?? '');
+        if (tx.categoryId && keyword) await repos.aliases.upsert(user.id, keyword, tx.categoryId);
+        return { toast: copy.CATEGORY_CONFIRMED, markup: kb.txKeyboard(tx.id) };
+      }
       case 'undo':
         return { reply: { text: copy.confirmDelete(summary(tx)), keyboard: kb.confirmDeleteKeyboard(tx.id) } };
       case 'del':

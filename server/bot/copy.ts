@@ -167,6 +167,7 @@ export function describeTx(tx: TxSummary): string {
 
 export const BUTTON = {
   changeCategory: '✏️ Ganti kategori',
+  confirmCategory: '👍 Bener',
   undo: '↩️ Undo',
   confirmDelete: '🗑 Ya, hapus',
   cancel: 'Batal',
@@ -256,6 +257,8 @@ export function savingLogged(amount: number, snap: BudgetSnapshot) {
 
 export const PICK_NEW_CATEGORY = 'Pilih kategori yang bener';
 export const CATEGORY_CHANGED = 'Kategori diganti ✅';
+/** 👍 on a category the LLM picked. */
+export const CATEGORY_CONFIRMED = 'Sip, aku inget buat berikutnya 👍';
 export const CATEGORY_UNAVAILABLE = 'Kategori itu ga bisa dipakai di sini.';
 export const TX_NOT_FOUND = 'Catatan ini udah ga ada.';
 

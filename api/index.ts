@@ -16,6 +16,8 @@ import { createTxRepo } from '../server/db/repos/txRepo.js';
 import { createUserRepo } from '../server/db/repos/userRepo.js';
 import { getEnv } from '../server/env.js';
 import { runMonthlyIncomeReminder } from '../server/jobs/monthlyIncomeReminder.js';
+import { logger } from '../server/lib/logger.js';
+import { classifyWithGroq } from '../server/nlp/groq.js';
 
 // Fail fast on boot: a missing or invalid env var stops the function with a message listing the keys.
 const env = getEnv();
@@ -39,6 +41,16 @@ const bot = createBot(env.TELEGRAM_BOT_TOKEN, {
   transaction: (fn) => prisma.$transaction((tx) => fn(botRepos(tx))),
   ownerTelegramId: env.OWNER_TELEGRAM_ID,
   now: () => new Date(),
+  llm: {
+    classify: (text, categories) =>
+      classifyWithGroq(text, categories, {
+        apiKey: env.GROQ_API_KEY,
+        model: env.GROQ_MODEL,
+        timeoutMs: env.GROQ_TIMEOUT_MS,
+      }),
+    dailyLimit: env.LLM_DAILY_LIMIT_PER_USER,
+    log: (entry) => logger.info('categorize.llm', entry), // parse method, outcome, latency: never the text
+  },
 });
 // Every outbound call (bot replies and cron messages): retry once on 429; mark the user on 403.
 bot.api.config.use(retryOn429());

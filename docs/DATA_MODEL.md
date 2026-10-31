@@ -29,7 +29,7 @@ Repositories (`server/db/repos/*Repo.ts`) are factories, `createTxRepo(db)` etc.
 
 Implementation notes (M5, the bot's logging loop, BOT_SPEC §3.5):
 - **`ChatState.payload`** always has a `nonce` that is also in the question's button data. `chatStateRepo.take(userId, kind, nonce, now)` claims the state with a conditional delete (`payload.nonce` matched by a JSON path filter), so of two taps only one gets it. Payloads: `AWAIT_AMOUNT` / `CONFIRM_AMOUNT` `{ nonce, base, rawText, occurredAt, candidate? }`; `AWAIT_CATEGORY` `{ nonce, amount, item, rawText, occurredAt, ask? }` (`ask`: from a "mau X", M6); `CONFIRM_LOG` `{ nonce, amount, item, categoryId, parseMethod, rawText, occurredAt }` (a "mau" for a NEEDS item waiting for [Catat], M6). `kind` is a plain string column, so new kinds need no migration. They're validated with Zod when read back.
-- **`RateLimit`** also holds `income-nudge:<userId>:<YYYY-MM>` (expires at the end of that WIB month): its first hit is "the first message of a month without income" (PRD F12).
+- **`RateLimit`** LLM quota keys are `llm:<userId>:<YYYY-MM-DD>` (WIB date, expiring at the next WIB midnight; M7). It also holds `income-nudge:<userId>:<YYYY-MM>` (expires at the end of that WIB month): its first hit is "the first message of a month without income" (PRD F12).
 - **`txRepo.findById` and `latest`** include the category (bot replies show its name).
 
 ## Draft schema

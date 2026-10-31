@@ -15,7 +15,7 @@ import type { UserRepo } from '../db/repos/userRepo.js';
 import { hitRateLimit, MESSAGES_PER_MINUTE } from '../lib/rateLimit.js';
 import { sha256Hex } from '../lib/secrets.js';
 import * as copy from './copy.js';
-import { createFlows, type CallbackResult, type MessageInput, type Reply } from './flows.js';
+import { createFlows, type CallbackResult, type FlowDeps, type MessageInput, type Reply } from './flows.js';
 import { ignoreNotModified, isBlockedError } from './telegram.js';
 
 // The grammY bot (ARCHITECTURE §3.1). Middleware order:
@@ -55,6 +55,8 @@ export type BotDeps = {
   newInviteCode?: () => string;
   /** Ties buttons to one pending question (keyboards.ts). */
   newNonce?: () => string;
+  /** Categorize step 3 (Groq). Optional: without it unknown items go straight to the category buttons. */
+  llm?: FlowDeps['llm'];
 };
 
 export const INVITE_TTL_HOURS = 48;
@@ -75,6 +77,7 @@ export function createBot(token: string, deps: BotDeps, botInfo?: UserFromGetMe)
     now: deps.now,
     newNonce: deps.newNonce ?? (() => randomBytes(6).toString('base64url')),
     random: deps.random,
+    llm: deps.llm,
   });
   const app = new Composer<BotContext>();
 

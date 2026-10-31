@@ -5,7 +5,7 @@ import { normalize } from './text.js';
 // categorize (BOT_SPEC §2.3). Pure. Order, stopping at the first hit:
 //   1. the user's learned aliases (KeywordAlias)       → parseMethod ALIAS
 //   2. the default keyword dictionary, longest first    → parseMethod RULE
-//   3. Groq                                             → stub, M4
+//   3. Groq                                             → async, so the bot runs it (nlp/groq.ts) → LLM
 //   4. ask the user with category buttons               → the bot does this when category is null (USER_PICK)
 
 export type NlpAlias = { keyword: string; categoryId: string };
@@ -20,7 +20,7 @@ export type CategorizeContext = {
 
 export type Categorized = {
   category: NlpCategory | null;
-  parseMethod: 'ALIAS' | 'RULE' | null;
+  parseMethod: 'ALIAS' | 'RULE' | 'LLM' | null;
   /** The keyword or alias that matched. */
   matchedKeyword: string | null;
   /** What was bought, for the note and as the alias key ("aku jajan cireng 10k" → "cireng"). */
@@ -106,11 +106,6 @@ export function categorize(text: string, context: CategorizeContext, amountTexts
     };
   }
 
-  // 3. Groq, then 4. ask the user.
-  return { ...categorizeWithLlm(), matchedKeyword: null, item: extractItem(text, amountTexts) };
-}
-
-/** Step 3 stub: no Groq yet (M4). Returning nothing means the bot asks the user (step 4). */
-export function categorizeWithLlm(): Pick<Categorized, 'category' | 'parseMethod'> {
-  return { category: null, parseMethod: null };
+  // No hit: the bot tries 3. Groq, then 4. asks the user.
+  return { category: null, parseMethod: null, matchedKeyword: null, item: extractItem(text, amountTexts) };
 }

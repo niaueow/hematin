@@ -6,7 +6,7 @@ import * as copy from './copy.js';
 // prefix + ids (ARCHITECTURE §3.2). Whatever a button carries is untrusted input: the handler loads the
 // record again, scoped to whoever pressed it (SECURITY §3.3).
 //
-//   tx:<txId>:cat|back|undo|del|no   a transaction's buttons
+//   tx:<txId>:cat|back|undo|del|no|ok  a transaction's buttons (ok = 👍 confirm an LLM category)
 //   tc:<txId>:<categoryId>           "Ganti kategori" → this category
 //   pk:<nonce>:<categoryId>          pick a category for a pending log (USER_PICK)
 //   px:<nonce>                       cancel that pick
@@ -17,7 +17,7 @@ import * as copy from './copy.js';
 
 export const MAX_CALLBACK_BYTES = 64;
 
-export type TxOp = 'cat' | 'back' | 'undo' | 'del' | 'no';
+export type TxOp = 'cat' | 'back' | 'undo' | 'del' | 'no' | 'ok';
 
 export type CallbackAction =
   | { kind: 'tx'; txId: string; op: TxOp }
@@ -55,7 +55,7 @@ export function encodeCallback(action: CallbackAction): string {
 
 const ID = '[A-Za-z0-9_-]{1,40}';
 const PATTERNS: [RegExp, (m: string[]) => CallbackAction][] = [
-  [new RegExp(`^tx:(${ID}):(cat|back|undo|del|no)$`), (m) => ({ kind: 'tx', txId: m[1]!, op: m[2] as TxOp })],
+  [new RegExp(`^tx:(${ID}):(cat|back|undo|del|no|ok)$`), (m) => ({ kind: 'tx', txId: m[1]!, op: m[2] as TxOp })],
   [new RegExp(`^tc:(${ID}):(${ID})$`), (m) => ({ kind: 'setCategory', txId: m[1]!, categoryId: m[2]! })],
   [new RegExp(`^pk:(${ID}):(${ID})$`), (m) => ({ kind: 'pick', nonce: m[1]!, categoryId: m[2]! })],
   [new RegExp(`^px:(${ID})$`), (m) => ({ kind: 'pickCancel', nonce: m[1]! })],
@@ -75,11 +75,14 @@ export function parseCallback(data: string): CallbackAction | null {
 
 // --- keyboards -----------------------------------------------------------------------------------
 
-/** Under every log reply (PRD F5). */
-export const txKeyboard = (txId: string) =>
-  new InlineKeyboard()
+/** Under every log reply (PRD F5). `confirm`: a 👍 for a category the LLM chose. */
+export function txKeyboard(txId: string, options: { confirm?: boolean } = {}) {
+  const keyboard = new InlineKeyboard();
+  if (options.confirm) keyboard.text(copy.BUTTON.confirmCategory, encodeCallback({ kind: 'tx', txId, op: 'ok' }));
+  return keyboard
     .text(copy.BUTTON.changeCategory, encodeCallback({ kind: 'tx', txId, op: 'cat' }))
     .text(copy.BUTTON.undo, encodeCallback({ kind: 'tx', txId, op: 'undo' }));
+}
 
 export const confirmDeleteKeyboard = (txId: string) =>
   new InlineKeyboard()
