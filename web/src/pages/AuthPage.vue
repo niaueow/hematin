@@ -31,14 +31,16 @@ onMounted(async () => {
 
 <template>
   <main class="page">
-    <p v-if="state === 'working'">Lagi masuk…</p>
+    <p v-if="state === 'working'" class="text-body-2">Lagi masuk…</p>
     <template v-else-if="state === 'failed'">
-      <h1>Link-nya udah ga berlaku 😕</h1>
-      <p>Link dashboard cuma bisa dipakai sekali dan berlaku 5 menit. Ketik /dashboard di bot buat link baru.</p>
+      <h1 class="text-h3">Link-nya udah ga berlaku 😕</h1>
+      <p class="text-body-2">
+        Link dashboard cuma bisa dipakai sekali dan berlaku 5 menit. Ketik /dashboard di bot buat link baru.
+      </p>
     </template>
     <template v-else>
-      <h1>Lagi ada gangguan 🙏</h1>
-      <p>Coba buka link-nya lagi bentar lagi.</p>
+      <h1 class="text-h3">Lagi ada gangguan 🙏</h1>
+      <p class="text-body-2">Coba buka link-nya lagi bentar lagi.</p>
     </template>
   </main>
 </template>

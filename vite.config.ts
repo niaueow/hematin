@@ -9,6 +9,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@web': fileURLToPath(new URL('./web/src', import.meta.url)),
+      // Pure, dependency-free server modules shared with the SPA (e.g. lib/money.ts).
+      '@server': fileURLToPath(new URL('./server', import.meta.url)),
     },
   },
   build: {

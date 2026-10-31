@@ -36,6 +36,11 @@ export default tseslint.config(
   {
     files: ['**/*.vue'],
     languageOptions: { parserOptions: { parser: tseslint.parser } },
+    rules: {
+      // Type-based defineProps: an optional prop is undefined when omitted, which is the intended "no icon / no
+      // label" (DESIGN.md §4). Forcing `undefined` defaults would only add noise.
+      'vue/require-default-prop': 'off',
+    },
   },
 
   {

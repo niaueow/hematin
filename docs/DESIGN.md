@@ -37,6 +37,14 @@ Files:
    dark `--background-system-hover-negative: var(--system-negative-300);`
 6. Don't use `--shadow-cobain-*` or `--shadow-show-ui-*`. They look like scratch styles.
 
+### As built (M12)
+- **The export is JSON** (`PRIMITIVE.json`, `SEMANTIC.JSON`, `RADIUS.JSON`, W3C design-token format, kept in the gitignored `figma-token/`). `npm run tokens` (`scripts/tokens-from-figma.mjs`) turns it into `tokens.css` with the names Figma's CSS export uses (`Background / Brand Active` → `--background-brand-active`, `{Neutral.900}` → `var(--neutral-900)`). It reproduces the export as-is, overlay cycle included; the fixes stay in `tokens.fixes.css`.
+- **This export has light-mode semantics only.** `data-semantic-mode` is set from `prefers-color-scheme` (`web/src/theme.ts`), but there are no dark values yet, so dark mode looks light. Fix 5's dark value is in place. To add dark mode, export the dark semantic collection and generate a `[data-semantic-mode='dark']` block.
+- **No text styles or shadows in this export.** The typography tokens (`--body-body-2-font-size` etc.) are in `tokens.fixes.css`, from the §2 table. Shadows are for Toast/Dialog (§4.5), not built yet.
+- **Radius is in this export** (fix 1 says it was missing), but `Radius Full` is 99px. `tokens.fixes.css` still sets the five radius tokens, with `--radius-full: 999px`.
+- **Fonts:** Plus Jakarta Sans 400/500/600/800 from Google Fonts (`web/index.html`), allowed by the CSP in `vercel.json` (SECURITY §6). Text styles: `web/src/styles/typography.css`; base rules: `base.css`; motion tokens `--motion-color` (150ms) and `--motion-enter` (200ms).
+- **The colour lint:** `npm run lint` also runs stylelint (`stylelint.config.mjs`): no hex, `rgb()`/`hsl()`/…, or named colours in `.vue` files or `web/src/styles`, except the two token files.
+
 ## 2. Typography
 
 Font: **Plus Jakarta Sans**. Line height `normal` everywhere (matches Figma "Auto").
@@ -74,6 +82,11 @@ Money amounts also get `font-variant-numeric: tabular-nums` so digits don't jump
 8. **Motion:** 150ms ease-out for color changes, 200ms for things that enter/leave (toast, dialog). Turn animations off under `prefers-reduced-motion`.
 
 ---
+
+### As built (M12)
+- **Icons:** `@lucide/vue` (`lucide-vue-next` is deprecated). Lucide doesn't officially support filled icons. Its guide sets `fill` (here `fill="currentColor"`) with `stroke-width="0"`, which works for some icons only. Check each filled icon (the bottom navbar's active tab) against Figma when it's built.
+- **Focus (rule 6) on inputs:** the field shows the 2px `--stroke-focus` outline for keyboard focus, on top of the focus border from §4.2.
+- **`data-force-state="hover|pressed|focus"`:** Button and Input honour it so `/playground` can show interaction states side by side. Only the playground uses it; pages never do.
 
 ## 4. Components
 
@@ -394,6 +407,10 @@ Emits: `confirm`, `cancel`.
 - [ ] Checked against Figma with the PerfectPixel extension at 100% zoom (🆕 components: check that they look like they belong next to the others)
 - [ ] Added to this file
 
+## 4.6 Playground (M12)
+
+`/playground` (OWNER only; the router guard sends anyone else home) renders every variant × size × state of Button, Input and Chip, plus AmountInput, side by side, for the PerfectPixel check at 100% zoom. It replaces Storybook in the production-only setup. Add each new component there.
+
 ## 6. Decisions log
 
 | # | Topic | Decision |
@@ -409,3 +426,5 @@ Emits: `confirm`, `cancel`.
 | 9 | Bucket colors | Pokok = info, Jajan = warning, Nabung = positive, Pemasukan = neutral |
 | 10 | Feedback components | Designed here from existing tokens (§4.5); add to Figma later |
 | 11 | New button variants | `secondary`, `danger` (+ `loading` prop), needed by dialogs; add to Figma later |
+| 12 | Loading button | Keeps its variant colours (not the disabled look), sets `aria-busy`, ignores clicks (M12) |
+| 13 | AmountInput | Shows `Rp35.000` in the field itself and emits an integer or `null`; digits only (no "jt"/"rb" parsing), at most 12 digits (M12) |

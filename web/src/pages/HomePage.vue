@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { LogOut } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { RouterLink, useRouter } from 'vue-router';
+import AppButton from '@web/components/AppButton.vue';
 import { me, logout } from '@web/session';
 import { isMiniApp } from '@web/telegram';
 
@@ -24,11 +26,12 @@ async function signOut(all: boolean) {
 
 <template>
   <main class="page">
-    <h1>Hai {{ name }} 👋</h1>
-    <p>Dashboard lagi dibangun. Sementara, catat pengeluaran lewat bot ya.</p>
+    <h1 class="text-h3">Hai {{ name }} 👋</h1>
+    <p class="text-body-2">Dashboard lagi dibangun. Sementara, catat pengeluaran lewat bot ya.</p>
+    <RouterLink v-if="me?.role === 'OWNER'" to="/playground" class="text-body-3-bold link">Playground</RouterLink>
     <div v-if="inBrowser" class="actions">
-      <button type="button" :disabled="busy" @click="signOut(false)">Keluar</button>
-      <button type="button" :disabled="busy" @click="signOut(true)">Keluar dari semua browser</button>
+      <AppButton variant="secondary" :leading-icon="LogOut" :loading="busy" @click="signOut(false)">Keluar</AppButton>
+      <AppButton variant="secondary" :disabled="busy" @click="signOut(true)">Keluar dari semua browser</AppButton>
     </div>
   </main>
 </template>
@@ -37,7 +40,11 @@ async function signOut(all: boolean) {
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 1.5rem;
+  gap: var(--space-spacing-8);
+  margin-top: var(--space-spacing-16);
+}
+
+.link {
+  color: var(--content-brand-active);
 }
 </style>

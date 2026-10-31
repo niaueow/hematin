@@ -26,5 +26,6 @@
     }
   },
   "include": ["api", "server", "tests", "*.ts"],
-  "exclude": ["node_modules", "dist", "web"]
+  // tests/web (Vue components) is type-checked with tests/web/tsconfig.json (DOM + .vue).
+  "exclude": ["node_modules", "dist", "web", "tests/web"]
 }

@@ -1,0 +1,93 @@
+/* Text styles (DESIGN.md §2). Each class sets family, size, weight, line height and letter spacing together:
+   never set font-size on its own. Money amounts add .tabular-nums. */
+
+.text-h1 {
+  font-family: var(--heading-heading-1-font-family);
+  font-size: var(--heading-heading-1-font-size);
+  font-weight: var(--heading-heading-1-font-weight);
+  line-height: var(--heading-heading-1-line-height);
+  letter-spacing: var(--heading-heading-1-letter-spacing);
+}
+
+.text-h2 {
+  font-family: var(--heading-heading-2-font-family);
+  font-size: var(--heading-heading-2-font-size);
+  font-weight: var(--heading-heading-2-font-weight);
+  line-height: var(--heading-heading-2-line-height);
+  letter-spacing: var(--heading-heading-2-letter-spacing);
+}
+
+.text-h3 {
+  font-family: var(--heading-heading-3-font-family);
+  font-size: var(--heading-heading-3-font-size);
+  font-weight: var(--heading-heading-3-font-weight);
+  line-height: var(--heading-heading-3-line-height);
+  letter-spacing: var(--heading-heading-3-letter-spacing);
+}
+
+.text-body-1,
+.text-body-1-bold {
+  font-family: var(--body-body-1-font-family);
+  font-size: var(--body-body-1-font-size);
+  font-weight: var(--body-body-1-font-weight);
+  line-height: var(--body-body-1-line-height);
+  letter-spacing: var(--body-body-1-letter-spacing);
+}
+
+.text-body-1-bold {
+  font-weight: var(--body-body-1-bold-font-weight);
+}
+
+.text-body-2,
+.text-body-2-bold {
+  font-family: var(--body-body-2-font-family);
+  font-size: var(--body-body-2-font-size);
+  font-weight: var(--body-body-2-font-weight);
+  line-height: var(--body-body-2-line-height);
+  letter-spacing: var(--body-body-2-letter-spacing);
+}
+
+.text-body-2-bold {
+  font-weight: var(--body-body-2-bold-font-weight);
+}
+
+.text-body-3,
+.text-body-3-bold {
+  font-family: var(--body-body-3-font-family);
+  font-size: var(--body-body-3-font-size);
+  font-weight: var(--body-body-3-font-weight);
+  line-height: var(--body-body-3-line-height);
+  letter-spacing: var(--body-body-3-letter-spacing);
+}
+
+.text-body-3-bold {
+  font-weight: var(--body-body-3-bold-font-weight);
+}
+
+.text-caption-1 {
+  font-family: var(--caption-caption-1-font-family);
+  font-size: var(--caption-caption-1-font-size);
+  font-weight: var(--caption-caption-1-font-weight);
+  line-height: var(--caption-caption-1-line-height);
+  letter-spacing: var(--caption-caption-1-letter-spacing);
+}
+
+.text-caption-2 {
+  font-family: var(--caption-caption-2-font-family);
+  font-size: var(--caption-caption-2-font-size);
+  font-weight: var(--caption-caption-2-font-weight);
+  line-height: var(--caption-caption-2-line-height);
+  letter-spacing: var(--caption-caption-2-letter-spacing);
+}
+
+.text-caption-3 {
+  font-family: var(--caption-caption-3-font-family);
+  font-size: var(--caption-caption-3-font-size);
+  font-weight: var(--caption-caption-3-font-weight);
+  line-height: var(--caption-caption-3-line-height);
+  letter-spacing: var(--caption-caption-3-letter-spacing);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

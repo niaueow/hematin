@@ -1,1 +1,106 @@
-/* Fixes for the Figma export, loaded after tokens.css (DESIGN.md §1). TODO: Phase 2. */
+/* Fixes for the Figma export, loaded after tokens.css (DESIGN.md §1). Numbers match the list there. */
+
+:root {
+  /* 1. Radius and spacing. The export's "Radius Full" is 99px; DESIGN says 999px so any height stays a pill. */
+  --radius-8: 8px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-24: 24px;
+  --radius-full: 999px;
+
+  --space-spacing-0: 0px;
+  --space-spacing-2: 2px;
+  --space-spacing-4: 4px;
+  --space-spacing-8: 8px;
+  --space-spacing-10: 10px;
+  --space-spacing-12: 12px;
+  --space-spacing-14: 14px;
+  --space-spacing-16: 16px;
+  --space-spacing-24: 24px;
+
+  /* 2 + 3. Typography. This export has no text styles, so the tokens come from the DESIGN §2 table:
+     Plus Jakarta Sans (loaded in index.html), line height normal (Figma "Auto"), letter spacing 0.01em
+     except caption-3 = 0. Names follow the Figma pattern, e.g. --body-body-2-font-size. */
+  --font-family-base: 'Plus Jakarta Sans', sans-serif;
+
+  --heading-heading-1-font-family: var(--font-family-base);
+  --heading-heading-1-font-size: 40px;
+  --heading-heading-1-font-weight: 600;
+  --heading-heading-1-line-height: normal;
+  --heading-heading-1-letter-spacing: 0.01em;
+
+  --heading-heading-2-font-family: var(--font-family-base);
+  --heading-heading-2-font-size: 32px;
+  --heading-heading-2-font-weight: 600;
+  --heading-heading-2-line-height: normal;
+  --heading-heading-2-letter-spacing: 0.01em;
+
+  --heading-heading-3-font-family: var(--font-family-base);
+  --heading-heading-3-font-size: 24px;
+  --heading-heading-3-font-weight: 600;
+  --heading-heading-3-line-height: normal;
+  --heading-heading-3-letter-spacing: 0.01em;
+
+  --body-body-1-font-family: var(--font-family-base);
+  --body-body-1-font-size: 20px;
+  --body-body-1-font-weight: 500;
+  --body-body-1-line-height: normal;
+  --body-body-1-letter-spacing: 0.01em;
+  --body-body-1-bold-font-weight: 600;
+
+  --body-body-2-font-family: var(--font-family-base);
+  --body-body-2-font-size: 16px;
+  --body-body-2-font-weight: 500;
+  --body-body-2-line-height: normal;
+  --body-body-2-letter-spacing: 0.01em;
+  --body-body-2-bold-font-weight: 600;
+
+  --body-body-3-font-family: var(--font-family-base);
+  --body-body-3-font-size: 14px;
+  --body-body-3-font-weight: 500;
+  --body-body-3-line-height: normal;
+  --body-body-3-letter-spacing: 0.01em;
+  --body-body-3-bold-font-weight: 600;
+
+  --caption-caption-1-font-family: var(--font-family-base);
+  --caption-caption-1-font-size: 14px;
+  --caption-caption-1-font-weight: 400;
+  --caption-caption-1-line-height: normal;
+  --caption-caption-1-letter-spacing: 0.01em;
+
+  --caption-caption-2-font-family: var(--font-family-base);
+  --caption-caption-2-font-size: 12px;
+  --caption-caption-2-font-weight: 400;
+  --caption-caption-2-line-height: normal;
+  --caption-caption-2-letter-spacing: 0.01em;
+
+  --caption-caption-3-font-family: var(--font-family-base);
+  --caption-caption-3-font-size: 10px;
+  --caption-caption-3-font-weight: 400;
+  --caption-caption-3-line-height: normal;
+  --caption-caption-3-letter-spacing: 0;
+
+  /* 4. Overlay cycle: the export defines --overlay-50 twice (primitive and semantic), and the semantic one is
+     var(--overlay-50), so the variable is invalid. Primitives renamed (values from PRIMITIVE.json "Overlay"),
+     semantics pointed at them. */
+  --neutral-overlay-50: #31313180;
+  --neutral-overlay-50-inverse: #f7fafc80;
+  --overlay-50: var(--neutral-overlay-50);
+  --overlay-50-inverse: var(--neutral-overlay-50-inverse);
+
+  /* 5. 🆕 Negative hover (danger button): no semantic token in Figma yet. */
+  --background-system-hover-negative: var(--system-negative-600);
+
+  /* 6. --shadow-cobain-* and --shadow-show-ui-* are scratch styles: don't use them. (This export has no shadows.) */
+
+  /* Motion (DESIGN §3 rule 8). */
+  --motion-color: 150ms ease-out;
+  --motion-enter: 200ms ease-out;
+}
+
+/* Dark mode = <html data-semantic-mode="dark"> (DESIGN §1). This export has light-mode semantics only, so dark
+   mode shows the light colors until a dark export is added (a [data-semantic-mode='dark'] block, generated the
+   same way). Fix 5's dark value is ready for it. */
+[data-semantic-mode='dark'] {
+  --background-system-hover-negative: var(--system-negative-300);
+}

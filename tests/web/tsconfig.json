@@ -1,0 +1,8 @@
+{
+  // Component tests: the SPA's settings (DOM, .vue, @web/*) plus the tests themselves.
+  "extends": "../../web/tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"]
+  },
+  "include": ["./**/*.ts", "../../web/src/**/*.ts", "../../web/src/**/*.vue", "../../web/env.d.ts"]
+}

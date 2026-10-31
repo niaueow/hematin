@@ -1,15 +1,22 @@
 <!doctype html>
-<html lang="id">
+<html lang="id" data-semantic-mode="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- /auth?token=… must never leak through a Referer header (also set as a response header in vercel.json). -->
     <meta name="referrer" content="no-referrer" />
     <title>Hematin</title>
+    <!-- Plus Jakarta Sans 400/500/600/800 (DESIGN.md §1 fix 3, §2). Allowed by the CSP in vercel.json. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;800&display=swap"
+    />
     <!-- Telegram Mini App bridge: provides initData inside Telegram; harmless in a normal browser. -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
-  <body>
+  <body class="text-body-3">
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

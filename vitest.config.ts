@@ -1,8 +1,11 @@
 import { fileURLToPath } from 'node:url';
+import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vitest/config';
 
 // Pure unit tests: no database, no env secrets (AGENTS.md).
 export default defineConfig({
+  // Component tests (tests/web) import .vue files; they opt into a DOM with `// @vitest-environment happy-dom`.
+  plugins: [vue()],
   resolve: {
     alias: {
       '@server': fileURLToPath(new URL('./server', import.meta.url)),
