@@ -48,7 +48,7 @@ Browser / Mini App ──►│  /api/*  ─────────────
 │  │  ├─ engine.ts          # wants/needs/savings computations (pure)
 │  │  └─ service.ts         # loads transactions from DB → calls engine
 │  ├─ auth/                 # Phase 2: initData verify, magic link, sessions, requireUser middleware (empty)
-│  ├─ routes/               # health, telegram (webhook), cron · Phase 2: auth, transactions, summary, budget, categories
+│  ├─ routes/               # health, telegram (webhook), cron, auth (+ /me), budget (+ summary), transactions, categories (+ aliases)
 │  ├─ jobs/                 # dailyReminder.ts (+ housekeeping.ts), weeklyRecap.ts, monthlyIncomeReminder.ts, deliver.ts
 │  └─ lib/                  # money formatting, errors, rate limit, logger
 ├─ web/                     # Vue 3 + Vite SPA (Phase 2)

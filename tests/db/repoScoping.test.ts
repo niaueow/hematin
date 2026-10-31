@@ -109,7 +109,17 @@ scopingSuite('txRepo', createTxRepo, [
   ['listInRange', (r) => r.listInRange(USER, day, day)],
   ['listUpTo', (r) => r.listUpTo(USER, day)],
   ['hasIncomeInRange', (r) => r.hasIncomeInRange(USER, day, day)],
-  ['listForUser', (r) => r.listForUser(USER, { from: day, type: 'EXPENSE', q: 'cireng', limit: 500 })],
+  [
+    'listForUser',
+    (r) =>
+      r.listForUser(USER, {
+        from: day,
+        type: 'EXPENSE',
+        q: 'cireng',
+        limit: 500,
+        after: { localDate: new Date(0), createdAt: new Date(0), id: 'tx_0' },
+      }),
+  ],
   ['latest', (r) => r.latest(USER, 10, now)],
   ['existsOnDate', (r) => r.existsOnDate(USER, day)],
   ['update', (r) => r.update(USER, 'tx_1', { amount: 5_000, occurredAt: now })],
@@ -195,10 +205,23 @@ describe('specific guarantees', () => {
     expect(data.localDate.toISOString()).toBe('2026-11-01T00:00:00.000Z');
   });
 
-  it('listForUser caps the page size at 100', async () => {
+  it('listForUser caps the page size at 100 (+1 row to see if there is more)', async () => {
     const { db, calls } = fakeDb();
     await createTxRepo(db).listForUser(USER, { limit: 500 });
-    expect(calls[0]?.args.take).toBe(100);
+    expect(calls[0]?.args.take).toBe(101);
+  });
+
+  it('listForUser keyset pagination stays inside the caller’s rows', async () => {
+    const { db, calls } = fakeDb();
+    const after = { localDate: new Date('2026-11-02T00:00:00.000Z'), createdAt: new Date(5), id: 'tx_9' };
+    await createTxRepo(db).listForUser(USER, { after });
+    const where = calls[0]?.args.where as Record<string, unknown>;
+    expect(where.userId).toBe(USER);
+    expect(where.OR).toEqual([
+      { localDate: { lt: after.localDate } },
+      { localDate: after.localDate, createdAt: { lt: after.createdAt } },
+      { localDate: after.localDate, createdAt: after.createdAt, id: { lt: 'tx_9' } },
+    ]);
   });
 });
 

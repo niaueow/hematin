@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '@server/app.js';
 import { APP_URL, authWorld } from '../auth/fakes.js';
+import { dashboardDeps } from './harness.js';
 import type { ErrorBody } from '@server/lib/errors.js';
 
 const errorCode = (res: request.Response) => (res.body as ErrorBody).error.code;
@@ -20,6 +21,7 @@ describe('Express app', () => {
     cron: { secret: CRON_SECRET, ...jobs },
     telegram: { webhookSecret: WEBHOOK_SECRET, handleUpdate },
     auth: { auth: authWorld().auth, appUrl: APP_URL },
+    dashboard: dashboardDeps(),
   });
 
   beforeEach(() => {

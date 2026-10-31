@@ -110,7 +110,7 @@ Status after the Phase 1 review (M9, 2026-10-31). Automated items run in every V
 
 - [x] Webhook rejects requests with a missing or wrong secret header: `tests/api/app.test.ts` (401, constant-time). Manual: `curl.exe -X POST <APP_URL>/api/telegram/webhook` → 401
 - [x] Cron endpoints reject requests without the bearer token: `tests/api/app.test.ts` (all three routes)
-- [x] Cross-user tests pass (§3.3), bot side: `tests/bot/logging.test.ts`, `purchase.test.ts`, `noSpend.test.ts`, `tests/db/repoScoping.test.ts`. API side: Phase 2
+- [x] Cross-user tests pass (§3.3), bot side: `tests/bot/logging.test.ts`, `purchase.test.ts`, `noSpend.test.ts`, `tests/db/repoScoping.test.ts`. API side (M11): `tests/api/dashboard.test.ts`, GET/PATCH/DELETE on another user's transaction, PATCH on their category, DELETE on their alias → 404 with nothing changed
 - [ ] Magic link: second use fails; expired fails; a GET to `/auth?token=` doesn't consume it (Phase 2)
 - [ ] initData: tampered `user` field fails; old `auth_date` fails (Phase 2)
 - [x] No secrets in the repo: history and tree scanned on 2026-10-31 for bot tokens, `gsk_` keys, `npg_` passwords and credentialed Postgres URLs; only placeholders in `tests/env.test.ts` and `docs/SETUP.md`. Re-check before going public with gitleaks

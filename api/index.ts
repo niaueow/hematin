@@ -95,6 +95,15 @@ const initBot = () =>
 export default createApp({
   version: env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'unknown',
   auth: { auth, appUrl: env.APP_URL },
+  dashboard: {
+    budget: createBudgetService({ txRepo: createTxRepo(prisma), intentRepo: createIntentRepo(prisma) }),
+    repos: {
+      transactions: createTxRepo(prisma),
+      categories: createCategoryRepo(prisma),
+      aliases: createAliasRepo(prisma),
+    },
+    now: () => new Date(),
+  },
   telegram: {
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET,
     handleUpdate: async (update) => {

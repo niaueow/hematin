@@ -5,6 +5,7 @@ import { MAGIC_LINKS_PER_HOUR } from '@server/auth/service.js';
 import type { ErrorBody } from '@server/lib/errors.js';
 import { sha256Hex } from '@server/lib/secrets.js';
 import { APP_URL, authWorld, initDataFor } from '../auth/fakes.js';
+import { dashboardDeps } from './harness.js';
 
 // Dashboard auth end to end (SECURITY §3, API.md): Express app + real auth service + in-memory repos.
 
@@ -23,6 +24,7 @@ function setup() {
     },
     telegram: { webhookSecret: 'w'.repeat(32), handleUpdate: vi.fn() },
     auth: { auth: world.auth, appUrl: APP_URL },
+    dashboard: dashboardDeps(),
   });
   /** POST /api/auth/magic the way the SPA does it (same origin, X-Requested-With). */
   const redeem = (token: string, ip = '203.0.113.1') =>

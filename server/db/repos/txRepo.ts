@@ -20,14 +20,31 @@ export type TransactionPatch = Partial<
   Pick<NewTransaction, 'type' | 'amount' | 'categoryId' | 'note' | 'occurredAt' | 'parseMethod'>
 >;
 
+/** Where the previous page ended: the last row's sort key (localDate desc, createdAt desc, id desc). */
+export type TransactionCursor = { localDate: Date; createdAt: Date; id: string };
+
 export type TransactionFilter = {
   from?: LocalDate;
   to?: LocalDate;
   type?: TxType;
   categoryId?: string;
   q?: string;
+  /** Page size, at most 100 (default 50). */
   limit?: number;
+  /** Rows after this one in the sort order (keyset pagination). */
+  after?: TransactionCursor;
 };
+
+export const MAX_PAGE_SIZE = 100;
+
+/** Rows strictly after `c` in (localDate desc, createdAt desc, id desc). */
+const afterCursor = (c: TransactionCursor) => ({
+  OR: [
+    { localDate: { lt: c.localDate } },
+    { localDate: c.localDate, createdAt: { lt: c.createdAt } },
+    { localDate: c.localDate, createdAt: c.createdAt, id: { lt: c.id } },
+  ],
+});
 
 const live = { deletedAt: null } as const;
 
@@ -49,10 +66,11 @@ export function createTxRepo(db: Db) {
       return db.transaction.findFirst({ where: { id, userId, ...live }, include: { category: true } });
     },
 
-    /** Budget input: all live transactions with localDate in [from, to]. */
+    /** All live transactions with localDate in [from, to], with their category (GET /api/summary). */
     listInRange(userId: string, from: LocalDate, to: LocalDate) {
       return db.transaction.findMany({
         where: { userId, ...live, ...dateRange(from, to) },
+        include: { category: true },
         orderBy: [{ localDate: 'asc' }, { createdAt: 'asc' }],
       });
     },
@@ -66,8 +84,10 @@ export function createTxRepo(db: Db) {
       });
     },
 
-    listForUser(userId: string, filter: TransactionFilter = {}) {
-      return db.transaction.findMany({
+    /** GET /api/transactions: newest first, one page. `hasMore`: another page follows (one extra row is read). */
+    async listForUser(userId: string, filter: TransactionFilter = {}) {
+      const limit = Math.min(filter.limit ?? 50, MAX_PAGE_SIZE);
+      const rows = await db.transaction.findMany({
         where: {
           userId,
           ...live,
@@ -75,10 +95,13 @@ export function createTxRepo(db: Db) {
           ...(filter.type && { type: filter.type }),
           ...(filter.categoryId && { categoryId: filter.categoryId }),
           ...(filter.q && { note: { contains: filter.q, mode: 'insensitive' as const } }),
+          ...(filter.after && afterCursor(filter.after)),
         },
+        include: { category: true },
         orderBy: [{ localDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
-        take: Math.min(filter.limit ?? 50, 100),
+        take: limit + 1,
       });
+      return { items: rows.slice(0, limit), hasMore: rows.length > limit };
     },
 
     /** /riwayat and /undo: most recently created first, with each category. */

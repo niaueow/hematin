@@ -10,7 +10,12 @@ describe('the budget engine is pure', () => {
     expect(imports).toEqual(['./periods.js']);
   });
 
-  it.each(['engine.ts', 'periods.ts'])('%s never reads the clock', (file) => {
+  it('summary.ts (GET /api/summary) imports only periods.ts', () => {
+    const imports = [...source('summary.ts').matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
+    expect(imports).toEqual(['./periods.js']);
+  });
+
+  it.each(['engine.ts', 'periods.ts', 'summary.ts'])('%s never reads the clock', (file) => {
     const code = source(file);
     expect(code).not.toMatch(/Date\.now\s*\(/);
     expect(code).not.toMatch(/new Date\(\s*\)/);

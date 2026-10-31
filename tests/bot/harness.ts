@@ -3,7 +3,8 @@ import { localDateFromDb, localDateToDb, toLocalDate, type LocalDate } from '@se
 import type { Category, KeywordAlias, PurchaseIntent, Transaction, User } from '@server/db/generated/client.js';
 import type { ChatStateKind } from '@server/db/repos/chatStateRepo.js';
 import type { NewIntent } from '@server/db/repos/intentRepo.js';
-import type { NewTransaction, TransactionPatch } from '@server/db/repos/txRepo.js';
+import type { NewCategory, CategoryPatch } from '@server/db/repos/categoryRepo.js';
+import type { NewTransaction, TransactionFilter, TransactionPatch } from '@server/db/repos/txRepo.js';
 import { DEFAULT_CATEGORIES } from '@server/nlp/keywords.js';
 
 // Drives the real grammY bot with handleUpdate. Telegram is a fake API (a transformer that records calls),
@@ -145,6 +146,7 @@ export class FakeDb {
           const tx = this.live(userId).find((t) => t.id === id);
           if (!tx) return ok(false);
           Object.assign(tx, patch, { updatedAt: this.now() });
+          if (patch.occurredAt) tx.localDate = localDateToDb(toLocalDate(patch.occurredAt)); // like the real repo
           this.writes.push('tx.update');
           return ok(true);
         },
@@ -183,14 +185,75 @@ export class FakeDb {
               return t.type === 'INCOME' && from <= date && date <= to;
             }),
           ),
+        listInRange: (userId: string, from: LocalDate, to: LocalDate) =>
+          ok(
+            this.live(userId)
+              .filter((t) => from <= localDateFromDb(t.localDate) && localDateFromDb(t.localDate) <= to)
+              .map((t) => this.withCategory(t)),
+          ),
+        // Same order and keyset rule as the real repo: (localDate desc, createdAt desc, id desc).
+        listForUser: (userId: string, filter: TransactionFilter = {}) => {
+          const limit = Math.min(filter.limit ?? 50, 100);
+          const key = (t: { localDate: Date; createdAt: Date; id: string }) =>
+            [t.localDate.getTime(), t.createdAt.getTime(), t.id] as const;
+          const before = (a: ReturnType<typeof key>, b: ReturnType<typeof key>) =>
+            a[0] !== b[0] ? a[0] < b[0] : a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2];
+          const rows = this.live(userId)
+            .filter((t) => {
+              const date = localDateFromDb(t.localDate);
+              return (
+                (!filter.from || date >= filter.from) &&
+                (!filter.to || date <= filter.to) &&
+                (!filter.type || t.type === filter.type) &&
+                (!filter.categoryId || t.categoryId === filter.categoryId) &&
+                (!filter.q || (t.note ?? '').toLowerCase().includes(filter.q.toLowerCase())) &&
+                (!filter.after || before(key(t), key(filter.after)))
+              );
+            })
+            .sort((a, b) => (before(key(a), key(b)) ? 1 : -1))
+            .map((t) => this.withCategory(t));
+          return ok({ items: rows.slice(0, limit), hasMore: rows.length > limit });
+        },
       },
       categories: {
         listUsable: (userId: string) =>
           ok(this.categories.filter((c) => (c.userId === null || c.userId === userId) && !c.archived)),
         findUsableById: (userId: string, id: string) =>
           ok(this.categories.find((c) => c.id === id && (c.userId === null || c.userId === userId)) ?? null),
+        findOwnById: (userId: string, id: string) =>
+          ok(this.categories.find((c) => c.id === id && c.userId === userId) ?? null),
+        createOwn: (userId: string, category: NewCategory) => {
+          // @@unique([userId, slug]) → Prisma P2002
+          if (this.categories.some((c) => c.userId === userId && c.slug === category.slug))
+            return Promise.reject(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
+          const row: Category = {
+            id: `cat${this.categories.length + 1}`,
+            userId,
+            slug: category.slug,
+            name: category.name,
+            emoji: category.emoji ?? null,
+            bucket: category.bucket,
+            keywords: [],
+            archived: false,
+            createdAt: this.now(),
+          };
+          this.categories.push(row);
+          return ok(row);
+        },
+        updateOwn: (userId: string, id: string, patch: CategoryPatch) => {
+          const row = this.categories.find((c) => c.id === id && c.userId === userId);
+          if (!row) return ok(false);
+          Object.assign(row, patch);
+          return ok(true);
+        },
       },
       aliases: {
+        deleteOwn: (userId: string, id: string) => {
+          const index = this.aliases.findIndex((a) => a.id === id && a.userId === userId);
+          if (index === -1) return ok(false);
+          this.aliases.splice(index, 1);
+          return ok(true);
+        },
         listForUser: (userId: string) =>
           ok(
             this.aliases
