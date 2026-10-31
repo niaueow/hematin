@@ -4,7 +4,7 @@ import { authOf } from '../auth/http.js';
 import { localDateFromDb, parseLocalDate, todayWib } from '../budget/periods.js';
 import type { BudgetService } from '../budget/service.js';
 import { periodRange, summarize, type SummaryTransaction } from '../budget/summary.js';
-import { DateString, guard, parse, type DashboardDeps } from './dashboard.js';
+import { DateString, guard, parseQuery, type DashboardDeps } from './dashboard.js';
 
 // GET /api/budget/current and GET /api/summary (API.md).
 
@@ -60,7 +60,7 @@ export function budgetRouter(deps: DashboardDeps): Router {
 export function summaryRouter(deps: DashboardDeps): Router {
   const router = Router();
   router.get('/', guard(deps), async (req, res) => {
-    const query = parse(SummaryQuery, req.query);
+    const query = parseQuery(SummaryQuery, req);
     const date = query.date ? parseLocalDate(query.date) : todayWib(deps.now());
     const range = periodRange(query.period, date);
     const rows = await deps.repos.transactions.listInRange(authOf(req).user.id, range.start, range.end);

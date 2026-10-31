@@ -563,6 +563,37 @@ describe('cross-user: another user’s ids are always 404 (SECURITY §3.3)', () 
   });
 });
 
+describe('query keys Vercel’s routing adds (DECISIONS D-034)', () => {
+  it.each([
+    '/api/transactions?path=transactions',
+    '/api/transactions?...path=transactions',
+    '/api/transactions?path=transactions&type=INCOME&limit=1',
+    '/api/transactions?...path=transactions&type=INCOME&limit=1',
+    '/api/summary?period=month&path=summary',
+    '/api/summary?period=month&...path=summary',
+    '/api/budget/current?path=budget/current',
+    '/api/categories?path=categories',
+    '/api/aliases?path=aliases',
+  ])('GET %s → 200', async (path) => {
+    const res = await section8().A.get(path);
+    expect(res.status).toBe(200);
+  });
+
+  it('are ignored, while the real filters still apply', async () => {
+    const res = await section8().A.get('/api/transactions?path=transactions&type=INCOME');
+    expect((res.body as { items: { type: string }[] }).items.map((t) => t.type)).toEqual(['INCOME']);
+  });
+
+  it.each(['/api/transactions?foo=1', '/api/transactions?path=x&foo=1', '/api/summary?period=month&foo=1'])(
+    'GET %s → 400 (unknown keys are still rejected)',
+    async (path) => {
+      const res = await section8().A.get(path);
+      expect(res.status).toBe(400);
+      expect(errorCode(res)).toBe('VALIDATION');
+    },
+  );
+});
+
 describe('auth on every endpoint', () => {
   it.each([
     ['get', '/api/budget/current'],
@@ -606,5 +637,9 @@ describe('auth on every endpoint', () => {
       .set('x-requested-with', 'fetch')
       .send(body);
     expect(ok.status).toBe(201);
+
+    // Reading needs no CSRF headers (API.md "Mutations & CSRF": only non-GET requests do).
+    const read = await request(world.app).get('/api/transactions').set('cookie', cookie);
+    expect(read.status).toBe(200);
   });
 });

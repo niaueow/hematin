@@ -6,7 +6,7 @@ import { localDateFromDb, noonWib, parseLocalDate } from '../budget/periods.js';
 import type { Category, Transaction, TxType } from '../db/generated/client.js';
 import { MAX_PAGE_SIZE, type TransactionCursor, type TransactionPatch } from '../db/repos/txRepo.js';
 import { AppError } from '../lib/errors.js';
-import { DateString, guard, Id, notFound, parse, pathId, type DashboardDeps } from './dashboard.js';
+import { DateString, guard, Id, notFound, parse, parseQuery, pathId, type DashboardDeps } from './dashboard.js';
 
 // /api/transactions (API.md): list with filters and cursor pagination, get, create, patch, soft delete.
 // Web entries are source WEB, parseMethod MANUAL, occurredAt = the date at 12:00 WIB. The DATA_MODEL
@@ -112,7 +112,7 @@ export function transactionsRouter(deps: DashboardDeps): Router {
   }
 
   router.get('/', async (req, res) => {
-    const query = parse(ListQuery, req.query);
+    const query = parseQuery(ListQuery, req);
     const userId = authOf(req).user.id;
     const page = await transactions.listForUser(userId, {
       ...(query.from && { from: parseLocalDate(query.from) }),

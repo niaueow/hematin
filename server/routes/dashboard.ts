@@ -1,4 +1,4 @@
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler } from 'express';
 import { z } from 'zod';
 import { requireUser } from '../auth/http.js';
 import type { AuthService } from '../auth/service.js';
@@ -37,6 +37,14 @@ export function parse<T>(schema: z.ZodType<T>, data: unknown): T {
   const issue = result.error.issues[0];
   const where = issue?.path.length ? `${issue.path.join('.')}: ` : '';
   throw new AppError('VALIDATION', 400, `${where}${issue?.message ?? 'invalid'}`);
+}
+
+/** Query keys Vercel's routing can add (a rewrite's named params, a catch-all function's); never ours (D-034). */
+const PLATFORM_QUERY_KEYS = new Set(['path', '...path']);
+
+/** `parse` for req.query, on a copy without the platform's keys (req.query is a getter in Express 5). */
+export function parseQuery<T>(schema: z.ZodType<T>, req: Request): T {
+  return parse(schema, Object.fromEntries(Object.entries(req.query).filter(([key]) => !PLATFORM_QUERY_KEYS.has(key))));
 }
 
 export const notFound = () => new AppError('NOT_FOUND', 404, 'Not found');
