@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import stylelint from 'stylelint';
 import { describe, expect, it } from 'vitest';
 
@@ -63,12 +63,24 @@ describe('tokens.fixes.css (DESIGN §1)', () => {
     expect(tokens).toContain('--overlay-50: var(--overlay-50);');
   });
 
-  it('every semantic token the components use is defined', () => {
-    const components = ['AppButton', 'AppInput', 'AppChip'].map((name) =>
-      readFileSync(new URL(`web/src/components/${name}.vue`, root), 'utf8'),
+  it('every token the components and pages use is defined (a var() with a fallback may be missing)', () => {
+    const files = ['web/src/components/', 'web/src/pages/'].flatMap((dir) =>
+      readdirSync(new URL(dir, root))
+        .filter((f) => f.endsWith('.vue'))
+        .map((f) => readFileSync(new URL(`${dir}${f}`, root), 'utf8')),
     );
-    const used = new Set(components.flatMap((code) => [...code.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((m) => m[1])));
-    const defined = new Set([...`${tokens}\n${fixes}`.matchAll(/(--[a-z0-9-]+):/g)].map((m) => m[1]));
+    const app = readFileSync(new URL('web/src/App.vue', root), 'utf8');
+    const base = readFileSync(new URL('web/src/styles/base.css', root), 'utf8');
+    const used = new Set(
+      [...files, app].flatMap((code) => [...code.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((m) => m[1])),
+    );
+    const defined = new Set(
+      [
+        ...`${tokens}
+${fixes}
+${base}`.matchAll(/(--[a-z0-9-]+):/g),
+      ].map((m) => m[1]),
+    );
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 });

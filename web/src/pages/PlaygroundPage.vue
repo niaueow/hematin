@@ -4,6 +4,7 @@ import {
   CircleCheck,
   Calendar,
   Info,
+  Inbox,
   PiggyBank,
   Plus,
   Search,
@@ -16,6 +17,14 @@ import AmountInput from '@web/components/AmountInput.vue';
 import AppButton from '@web/components/AppButton.vue';
 import AppChip from '@web/components/AppChip.vue';
 import AppInput from '@web/components/AppInput.vue';
+import AppAlert from '@web/components/AppAlert.vue';
+import AppSkeleton from '@web/components/AppSkeleton.vue';
+import AppToast from '@web/components/AppToast.vue';
+import BottomNav from '@web/components/BottomNav.vue';
+import ConfirmDialog from '@web/components/ConfirmDialog.vue';
+import EmptyState from '@web/components/EmptyState.vue';
+import SideNav from '@web/components/SideNav.vue';
+import { useToast } from '@web/composables/useToast';
 import type { Tone } from '@web/lib/tones';
 
 // The component catalogue (OWNER only, see router.ts): every variant × size × state side by side, for checking
@@ -31,6 +40,23 @@ const tones: Tone[] = ['positive', 'warning', 'negative', 'info', 'neutral'];
 
 const amount = ref<number | null>(35_000);
 const note = ref('');
+const toast = useToast();
+const sideCollapsed = ref(false);
+const dialog = ref<'danger' | 'default' | 'loading' | null>(null);
+const showAlert = ref(true);
+const demoUser = { name: 'Nia Putri', subtitle: '@niaputri', online: true };
+
+function demoToast(tone: Tone) {
+  if (tone === 'neutral') {
+    toast.show({
+      tone,
+      message: 'Transaksi dihapus',
+      actionLabel: 'Urungkan',
+      onAction: () => toast.show({ tone: 'positive', message: 'Dikembalikan' }),
+    });
+  } else toast.show({ tone, message: `Toast ${tone}` });
+}
+
 const forced = (state: string) => (['hover', 'pressed', 'focus'].includes(state) ? state : undefined);
 </script>
 
@@ -122,10 +148,128 @@ const forced = (state: string) => (['hover', 'pressed', 'focus'].includes(state)
         <AppChip tone="info" :leading-icon="CircleCheck">Pokok</AppChip>
       </div>
     </section>
+
+    <section class="block">
+      <h2 class="text-body-1-bold">Navigation (DESIGN §4.4)</h2>
+      <p class="text-caption-1 muted">
+        SideNav (expanded / collapsed) and BottomNav, inside fixed frames. Active = the current route.
+      </p>
+      <div class="row row--top">
+        <div class="frame frame--side"><SideNav :user="demoUser" /></div>
+        <div class="frame frame--side"><SideNav collapsed :user="demoUser" /></div>
+        <div class="frame frame--side"><SideNav v-model:collapsed="sideCollapsed" :user="{ name: 'Rani' }" /></div>
+      </div>
+      <div class="frame frame--bottom"><BottomNav /></div>
+    </section>
+
+    <section class="block">
+      <h2 class="text-body-1-bold">AppToast + useToast (§4.5a)</h2>
+      <div class="column">
+        <AppToast v-for="tone in tones" :key="tone" :tone="tone" :message="`Toast ${tone}`" />
+        <AppToast tone="neutral" message="Transaksi dihapus" action-label="Urungkan" />
+      </div>
+      <div class="row">
+        <AppButton v-for="tone in tones" :key="tone" variant="secondary" size="small" @click="demoToast(tone)">
+          show {{ tone }}
+        </AppButton>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2 class="text-body-1-bold">AppAlert (§4.5b)</h2>
+      <div class="column">
+        <AppAlert v-for="tone in tones" :key="tone" :tone="tone" :title="`Alert ${tone}`">
+          Uang jajan bulan ini belum dicatat.
+        </AppAlert>
+        <AppAlert tone="warning" title="With action" dismissible>
+          Jajan minggu ini lewat Rp12.000.
+          <template #action><AppButton size="small">Lihat</AppButton></template>
+        </AppAlert>
+        <AppAlert tone="info" :leading-icon="null">No icon, no title.</AppAlert>
+        <AppAlert v-if="showAlert" tone="positive" dismissible @close="showAlert = false">Dismiss me.</AppAlert>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2 class="text-body-1-bold">EmptyState (§4.5c)</h2>
+      <div class="row row--top">
+        <div class="frame"><EmptyState title="Belum ada transaksi minggu ini" /></div>
+        <div class="frame">
+          <EmptyState
+            :icon="Inbox"
+            title="Belum ada transaksi"
+            description="Catat lewat bot, misal “warteg 10k”, atau tambah di sini."
+            action-label="Tambah transaksi"
+          />
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2 class="text-body-1-bold">AppSkeleton (§4.5d)</h2>
+      <div class="column column--narrow">
+        <AppSkeleton text-class="text-h3" width="60%" />
+        <AppSkeleton />
+        <AppSkeleton width="80%" />
+        <div class="row">
+          <AppSkeleton shape="circle" width="48px" />
+          <AppSkeleton shape="rect" width="200px" height="48px" />
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2 class="text-body-1-bold">ConfirmDialog (§4.5e)</h2>
+      <p class="text-caption-1 muted">Bottom sheet below 1024px. Esc, the overlay, or Telegram's back button cancel.</p>
+      <div class="row">
+        <AppButton variant="danger" @click="dialog = 'danger'">Danger</AppButton>
+        <AppButton variant="secondary" @click="dialog = 'default'">Default</AppButton>
+        <AppButton variant="secondary" @click="dialog = 'loading'">Loading</AppButton>
+      </div>
+      <ConfirmDialog
+        :open="dialog !== null"
+        :title="dialog === 'default' ? 'Simpan perubahan?' : 'Hapus transaksi?'"
+        :message="dialog === 'default' ? 'Kategorinya bakal diganti.' : 'Jajan cireng Rp10.000 bakal dihapus.'"
+        :tone="dialog === 'default' ? 'default' : 'danger'"
+        :confirm-label="dialog === 'default' ? 'Simpan' : 'Ya, hapus'"
+        :loading="dialog === 'loading'"
+        @update:open="(open) => (dialog = open ? dialog : null)"
+        @confirm="dialog = null"
+      />
+    </section>
   </main>
 </template>
 
 <style scoped>
+.frame {
+  overflow: hidden;
+  border: 1px dashed var(--stroke-secondary);
+  border-radius: var(--radius-8);
+}
+
+.frame--side {
+  height: 520px;
+}
+
+.frame--bottom {
+  max-width: 400px;
+}
+
+.row--top {
+  align-items: flex-start;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-spacing-8);
+  max-width: 480px;
+}
+
+.column--narrow {
+  max-width: 320px;
+}
+
 .playground {
   display: flex;
   flex-direction: column;

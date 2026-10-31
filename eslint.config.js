@@ -42,6 +42,11 @@ export default tseslint.config(
       'vue/require-default-prop': 'off',
     },
   },
+  {
+    // Component tests define small throwaway host components inline.
+    files: ['tests/**/*.ts'],
+    rules: { 'vue/one-component-per-file': 'off' },
+  },
 
   {
     files: ['**/*.{js,mjs,ts}'],

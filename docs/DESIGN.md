@@ -310,6 +310,15 @@ Emits: `logout`.
 
 ---
 
+#### As built (M13)
+- **Code:** `web/src/nav.ts` (`NAV_ITEMS`, `isNavActive`), `SideNav.vue`, `SideNavItem.vue`, `BottomNav.vue`, `UserAvatar.vue`, `AppShell.vue` (the signed-in layout: sidebar from 1024px, bottom navbar below, `ToastHost`).
+- **Logo mark:** "H" (for Hematin), not the "N" written above, which looks like a leftover from the Figma template. Change it here and in `SideNav.vue` if Figma says otherwise.
+- **Collapsed sidebar:** the header stacks the mark above the toggle (42px wide). The collapsed state is stored per browser under `hematin.sidenav.collapsed`; without storage it just isn't remembered.
+- **Profile area:** name = Telegram first name (else @username); subtitle = `@username`; photo = Telegram's `photo_url` inside the Mini App (display only), else initials. No presence data, so no online dot. The logout icon is hidden inside the Mini App (initData signs every request; nothing to sign out of).
+- **Filled icons:** the active BottomNav icon gets `fill="currentColor"` (Lucide's filled-icon approach, §3 rule 3). Compare with Figma; some icons may need a different glyph.
+- **Safe areas:** `--app-safe-bottom` (base.css) = the larger of `env(safe-area-inset-bottom)` and Telegram's `--tg-safe-area-inset-bottom` + `--tg-content-safe-area-inset-bottom` (Bot API 8.0+). Used by the BottomNav, the toast position and the dialog's bottom sheet. `--app-bottom-nav-height` is 77px.
+- **Telegram back button:** one app-wide handler stack (`pushTelegramBack` in `web/src/telegram.ts`, `useTelegramBack`). The newest registration gets the press; the button shows while anything is registered. Pages with `meta.back` (the playground) go back; an open ConfirmDialog cancels. Needs Bot API 6.1+ (checked with `isVersionAtLeast`).
+
 ### 4.5 Feedback 🆕
 
 Not in Figma yet. Built only from the existing tokens and the same proportions as the other components (radius 16, padding 12–16, Plus Jakarta Sans text styles).
@@ -407,9 +416,16 @@ Emits: `confirm`, `cancel`.
 - [ ] Checked against Figma with the PerfectPixel extension at 100% zoom (🆕 components: check that they look like they belong next to the others)
 - [ ] Added to this file
 
+### 4.5 As built (M13)
+- **Code:** `web/src/composables/useToast.ts` + `ToastHost.vue` + `AppToast.vue`, `AppAlert.vue`, `EmptyState.vue`, `AppSkeleton.vue`, `ConfirmDialog.vue`.
+- **Toast:** `useToast().show()` returns an id; `dismiss(id)` closes it. The timer pauses on hover or focus and resumes with the time left. Newest at the bottom; a 4th toast drops the oldest.
+- **Shadows:** this Figma export has none, so Toast and Dialog use `var(--shadow-l3-box-shadow, none)` / `--shadow-l4` with a `none` fallback until a shadow export lands.
+- **Alert:** no live-region role (it's page content, not an announcement); Toast handles announcements.
+- **ConfirmDialog:** `role="alertdialog"`, `aria-modal`, labelled by its title and described by its message. Confirm only emits `confirm`; the page closes it (so it can show `loading` first).
+
 ## 4.6 Playground (M12)
 
-`/playground` (OWNER only; the router guard sends anyone else home) renders every variant × size × state of Button, Input and Chip, plus AmountInput, side by side, for the PerfectPixel check at 100% zoom. It replaces Storybook in the production-only setup. Add each new component there.
+`/playground` (OWNER only; the router guard sends anyone else home) renders every variant × size × state of Button, Input and Chip, plus AmountInput, side by side, for the PerfectPixel check at 100% zoom. Since M13 it also has SideNav (expanded / collapsed), BottomNav, Toast (static, plus buttons that call `useToast`), Alert, EmptyState, Skeleton and ConfirmDialog. It replaces Storybook in the production-only setup. Add each new component there.
 
 ## 6. Decisions log
 
